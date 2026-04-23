@@ -139,6 +139,18 @@ export async function deleteReading(id: number): Promise<void> {
   await getPool().query("DELETE FROM readings WHERE id = :id", { id });
 }
 
+export async function renameReadingsMode(
+  flashId: number,
+  from: string,
+  to: string
+): Promise<number> {
+  const [res] = await getPool().query<ResultSetHeader>(
+    `UPDATE readings SET mode = :to WHERE flash_id = :flashId AND mode = :from`,
+    { flashId, from, to }
+  );
+  return res.affectedRows;
+}
+
 export async function listAllWithReadings(): Promise<FlashWithReadings[]> {
   const [flashRows] = await getPool().query<RowDataPacket[]>(
     "SELECT * FROM flashes ORDER BY manufacturer, model"

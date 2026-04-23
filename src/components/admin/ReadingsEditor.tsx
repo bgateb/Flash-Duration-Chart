@@ -79,7 +79,7 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
   // When the user switches away from an empty mode, the tab naturally disappears.
   const knownModes = useMemo(() => {
     const s = new Set<string>(rows.map((r) => r.mode));
-    s.add("Normal");
+    if (s.size === 0) s.add("Normal");
     s.add(activeMode);
     return sortModes(Array.from(s));
   }, [rows, activeMode]);
@@ -211,6 +211,43 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
     setNewRow(emptyDraft(trimmed));
   }
 
+  async function renameMode() {
+    const from = activeMode;
+    const raw = window.prompt(`Rename "${from}" to:`, from);
+    const to = raw?.trim();
+    if (!to || to === from) return;
+    if (to.length > 40) {
+      window.alert("Mode name must be 40 characters or fewer");
+      return;
+    }
+    if (knownModes.includes(to)) {
+      window.alert(`A mode named "${to}" already exists.`);
+      return;
+    }
+    const hasSavedRows = rows.some((r) => r.mode === from && r.id != null);
+    if (hasSavedRows) {
+      try {
+        const res = await fetch(`/api/readings/rename-mode`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ flash_id: flashId, from, to }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          window.alert(body.error ?? "Rename failed");
+          return;
+        }
+      } catch (err: any) {
+        window.alert(err?.message ?? "Rename failed");
+        return;
+      }
+    }
+    setRows((prev) => prev.map((r) => (r.mode === from ? { ...r, mode: to } : r)));
+    setNewRow((p) => ({ ...p, mode: to }));
+    setActiveMode(to);
+    router.refresh();
+  }
+
   // Rows for the currently-selected mode tab, sorted by stops descending.
   const visibleRows = useMemo(() => {
     const list = rows
@@ -254,6 +291,14 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
           title="Add new mode"
         >
           + add mode
+        </button>
+        <button
+          type="button"
+          onClick={renameMode}
+          className="inline-flex items-center rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          title={`Rename "${activeMode}"`}
+        >
+          rename
         </button>
       </div>
 
