@@ -14,11 +14,14 @@ UPDATE readings r
 INNER JOIN flashes f ON f.id = r.flash_id
 SET r.mode = COALESCE(NULLIF(TRIM(f.mode), ''), 'Normal');
 
--- 3. Replace the (flash_id, stops) unique key with (flash_id, mode, stops)
---    so the same flash can have a 1/4 reading in both Normal and Freeze.
-ALTER TABLE readings DROP INDEX uniq_flash_stop;
+-- 3. Add the new unique key FIRST so the old one can be dropped without
+--    breaking the foreign key on flash_id (which needs *some* index starting
+--    with flash_id to keep the FK constraint satisfiable).
 ALTER TABLE readings
   ADD UNIQUE KEY uniq_flash_mode_stop (flash_id, mode, stops_below_full);
 
--- 4. Drop the now-redundant column from flashes. Mode lives on readings now.
+-- 4. Drop the now-redundant (flash_id, stops) unique key.
+ALTER TABLE readings DROP INDEX uniq_flash_stop;
+
+-- 5. Drop the now-redundant column from flashes. Mode lives on readings now.
 ALTER TABLE flashes DROP COLUMN mode;
