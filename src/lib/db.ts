@@ -21,6 +21,10 @@ function createPool(): mysql.Pool {
     connectionLimit: 8,
     namedPlaceholders: true,
     decimalNumbers: true,
+    // Return DATE/DATETIME/TIMESTAMP columns as strings instead of JS Date
+    // objects — matches our TypeScript types and avoids React error #31
+    // when a Date is rendered directly in JSX.
+    dateStrings: true,
   });
 }
 
