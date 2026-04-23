@@ -60,18 +60,26 @@ fi
 # Rewrite the repo URL to use that host alias
 REMOTE_URL="$(echo "$REPO_URL" | sed -E 's|git@github\.com:|git@github-flashduration:|')"
 
-# Trust github.com's host key once
+# Trust github.com's host key once (multiple types so the client picks any)
 if ! ssh-keygen -F github.com >/dev/null 2>&1; then
-  ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
+  ssh-keyscan -t ed25519,rsa,ecdsa github.com 2>/dev/null >> "$HOME/.ssh/known_hosts" || true
 fi
 
 # ─── 2. Verify GitHub access, bail with instructions if missing ────────────
-if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T github-flashduration 2>&1 | grep -q "successfully authenticated"; then
+# Use 'ssh -G' to prove the host block resolves; then test auth by attempting
+# a harmless git command — it exits 0 when auth+access work, non-zero otherwise.
+AUTH_OUT="$(ssh -o StrictHostKeyChecking=accept-new -T github-flashduration 2>&1 || true)"
+if ! echo "$AUTH_OUT" | grep -q "successfully authenticated"; then
   echo ""
+  echo "── ssh debug output ──"
+  echo "$AUTH_OUT"
+  echo "──────────────────────"
+  echo ""
+  REPO_OWNER_NAME="$(echo "$REPO_URL" | sed -E 's|.*github\.com[:/](.+)\.git$|\1|')"
   echo "✗ This key is not yet authorized on the GitHub repo."
   echo ""
   echo "  Copy the PUBLIC key below and add it as a Deploy Key on the repo:"
-  echo "    https://github.com/<you>/<repo>/settings/keys  →  Add deploy key"
+  echo "    https://github.com/${REPO_OWNER_NAME}/settings/keys/new"
   echo "    (Read-only is enough — do NOT check 'Allow write access')"
   echo ""
   echo "  ─── PUBLIC KEY ────────────────────────────────────────────────"
