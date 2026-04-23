@@ -1,28 +1,94 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { FlashWithReadings } from "@/lib/types";
+import type { FlashWithReadings, Reading } from "@/lib/types";
 import { colorForIndex } from "@/lib/colors";
 import { FlashChart } from "./FlashChart";
 import { FlashPicker } from "./FlashPicker";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
+import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
+import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 
 export type PowerAxis = "fraction" | "stops";
 export type DurationAxis = "one-over-x" | "seconds";
 
+// Dash pattern per mode. "Normal" is always solid; secondary modes get
+// progressively sparser dashes so the same-color variant reads as "same
+// flash, different mode" at a glance.
+const DASH_PATTERNS = ["0", "6 4", "2 3", "10 5", "1 4", "8 2 2 2"];
+
+function sortModes(modes: string[]): string[] {
+  return [...modes].sort((a, b) => {
+    if (a === b) return 0;
+    if (a === "Normal") return -1;
+    if (b === "Normal") return 1;
+    return a.localeCompare(b);
+  });
+}
+
+export type ColoredFlash = FlashWithReadings & { color: string; modes: string[] };
+
+export type Series = {
+  id: string; // `${flashId}:${mode}`
+  flashId: number;
+  flashName: string;
+  mode: string;
+  color: string;
+  dashPattern: string;
+  ratedWs: number | null;
+  readings: Reading[];
+};
+
 export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
-  const [selected, setSelected] = useState<Set<number>>(() => new Set(flashes.map((f) => f.id)));
+  // Color + modes per flash
+  const colored: ColoredFlash[] = useMemo(() => {
+    return flashes.map((f, i) => {
+      const modes = sortModes(Array.from(new Set(f.readings.map((r) => r.mode))));
+      return { ...f, color: colorForIndex(i), modes };
+    });
+  }, [flashes]);
+
+  // Build all (flash, mode) series with dash style by mode index.
+  const allSeries: Series[] = useMemo(() => {
+    const allModes = sortModes(
+      Array.from(new Set(colored.flatMap((f) => f.modes)))
+    );
+    const dashByMode: Record<string, string> = {};
+    allModes.forEach((m, i) => {
+      dashByMode[m] = DASH_PATTERNS[Math.min(i, DASH_PATTERNS.length - 1)];
+    });
+    const list: Series[] = [];
+    for (const f of colored) {
+      for (const m of f.modes) {
+        list.push({
+          id: `${f.id}:${m}`,
+          flashId: f.id,
+          flashName: `${f.manufacturer} ${f.model}`,
+          mode: m,
+          color: f.color,
+          dashPattern: dashByMode[m] ?? "0",
+          ratedWs: f.rated_ws,
+          readings: f.readings.filter((r) => r.mode === m),
+        });
+      }
+    }
+    return list;
+  }, [colored]);
+
+  // Selection keyed by series id. Default: everything visible.
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(allSeries.map((s) => s.id))
+  );
   const [powerAxis, setPowerAxis] = useState<PowerAxis>("fraction");
   const [durationAxis, setDurationAxis] = useState<DurationAxis>("one-over-x");
 
-  const colored = useMemo(
-    () => flashes.map((f, i) => ({ ...f, color: colorForIndex(i) })),
-    [flashes]
+  const visibleSeries = useMemo(
+    () => allSeries.filter((s) => selected.has(s.id)),
+    [allSeries, selected]
   );
-  const visible = useMemo(() => colored.filter((f) => selected.has(f.id)), [colored, selected]);
 
   return (
-    <div className="grid gap-6 md:grid-cols-[220px,1fr]">
+    <div className="grid gap-6 md:grid-cols-[240px,1fr]">
       <aside className="space-y-6 md:sticky md:top-4 md:self-start">
         <FlashPicker flashes={colored} selected={selected} onChange={setSelected} />
       </aside>
@@ -50,10 +116,10 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
         </div>
 
         <div className="rounded-lg border bg-card p-2 md:p-4">
-          <FlashChart flashes={visible} powerAxis={powerAxis} durationAxis={durationAxis} />
+          <FlashChart series={visibleSeries} powerAxis={powerAxis} durationAxis={durationAxis} />
         </div>
 
-        <ReadingsTable flashes={visible} />
+        <ReadingsTable series={visibleSeries} />
       </section>
     </div>
   );
@@ -88,21 +154,22 @@ function AxisToggle({
   );
 }
 
-import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
-import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
-
-function ReadingsTable({ flashes }: { flashes: (FlashWithReadings & { color: string })[] }) {
-  const anyRated = flashes.some((f) => f.rated_ws != null);
-  const rows = flashes.flatMap((f) =>
-    f.readings.map((r) => ({
-      id: `${f.id}-${r.id}`,
-      flash: `${f.manufacturer} ${f.model}`,
-      color: f.color,
+function ReadingsTable({ series }: { series: Series[] }) {
+  const anyRated = series.some((s) => s.ratedWs != null);
+  const anyMultiMode =
+    new Set(series.map((s) => s.mode)).size > 1 ||
+    series.some((s) => s.mode !== "Normal");
+  const rows = series.flatMap((s) =>
+    s.readings.map((r) => ({
+      key: `${s.id}-${r.id}`,
+      flashName: s.flashName,
+      color: s.color,
+      mode: s.mode,
       stops: r.stops_below_full,
       t: r.t_one_tenth_seconds,
       ct: r.color_temp_k,
       notes: r.notes,
-      ws: effectiveWs(r.stops_below_full, f.rated_ws),
+      ws: effectiveWs(r.stops_below_full, s.ratedWs),
     }))
   );
   if (rows.length === 0) return null;
@@ -112,6 +179,7 @@ function ReadingsTable({ flashes }: { flashes: (FlashWithReadings & { color: str
         <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-3 py-2 text-left font-medium">Flash</th>
+            {anyMultiMode ? <th className="px-3 py-2 text-left font-medium">Mode</th> : null}
             <th className="px-3 py-2 text-right font-medium">Power</th>
             {anyRated ? <th className="px-3 py-2 text-right font-medium">Output</th> : null}
             <th className="px-3 py-2 text-right font-medium">t.1</th>
@@ -121,11 +189,14 @@ function ReadingsTable({ flashes }: { flashes: (FlashWithReadings & { color: str
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} className="border-t border-border/60">
+            <tr key={r.key} className="border-t border-border/60">
               <td className="px-3 py-2">
                 <span className="inline-block h-2 w-2 rounded-full align-middle" style={{ background: r.color }} />
-                <span className="ml-2 align-middle">{r.flash}</span>
+                <span className="ml-2 align-middle">{r.flashName}</span>
               </td>
+              {anyMultiMode ? (
+                <td className="px-3 py-2 text-muted-foreground">{r.mode}</td>
+              ) : null}
               <td className="px-3 py-2 text-right font-mono">
                 {stopsToFraction(r.stops)} <span className="text-muted-foreground">({stopsToLabel(r.stops)})</span>
               </td>

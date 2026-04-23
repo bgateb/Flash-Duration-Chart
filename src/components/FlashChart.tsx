@@ -11,60 +11,57 @@ import {
   YAxis,
   Legend,
 } from "recharts";
-import type { FlashWithReadings } from "@/lib/types";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
-import type { PowerAxis, DurationAxis } from "./FlashChartView";
-
-type Colored = FlashWithReadings & { color: string };
+import type { PowerAxis, DurationAxis, Series } from "./FlashChartView";
 
 export function FlashChart({
-  flashes,
+  series,
   powerAxis,
   durationAxis,
 }: {
-  flashes: Colored[];
+  series: Series[];
   powerAxis: PowerAxis;
   durationAxis: DurationAxis;
 }) {
   // Build a SHARED dataset (one row per unique power level, with one t/ws/ct
-  // column per flash). Recharts' tooltip can only correctly attribute payload
-  // entries when all <Line>s share the parent <LineChart>'s data — when each
-  // <Line> has its own data prop, the tooltip mis-shows the same point for all
-  // lines. The flash id is encoded in the dataKey suffix.
+  // column per (flash, mode) series). Recharts' tooltip can only correctly
+  // attribute payload entries when all <Line>s share the parent <LineChart>'s
+  // data — with separate `data` props, the tooltip mis-shows the same point
+  // for every line. Encode the series id (flashId:mode) in the dataKey.
   const { combinedData, lineConfigs } = useMemo(() => {
     const xMap = new Map<number, Record<string, any>>();
-    for (const f of flashes) {
-      for (const r of f.readings) {
+    for (const s of series) {
+      for (const r of s.readings) {
         const x = Math.pow(2, r.stops_below_full);
-        const key = x;
-        if (!xMap.has(key)) xMap.set(key, { power: x, stops: r.stops_below_full });
-        const row = xMap.get(key)!;
-        row[`t_${f.id}`] = r.t_one_tenth_seconds;
-        row[`ws_${f.id}`] = effectiveWs(r.stops_below_full, f.rated_ws);
-        row[`ct_${f.id}`] = r.color_temp_k;
-        row[`notes_${f.id}`] = r.notes;
-        row[`name_${f.id}`] = `${f.manufacturer} ${f.model}`;
+        if (!xMap.has(x)) xMap.set(x, { power: x, stops: r.stops_below_full });
+        const row = xMap.get(x)!;
+        const key = encodeKey(s.id);
+        row[`t_${key}`] = r.t_one_tenth_seconds;
+        row[`ws_${key}`] = effectiveWs(r.stops_below_full, s.ratedWs);
+        row[`ct_${key}`] = r.color_temp_k;
+        row[`notes_${key}`] = r.notes;
+        row[`name_${key}`] = s.mode === "Normal" ? s.flashName : `${s.flashName} — ${s.mode}`;
       }
     }
     const combinedData = Array.from(xMap.values()).sort((a, b) => a.power - b.power);
-    const lineConfigs = flashes.map((f) => ({
-      id: f.id,
-      name: `${f.manufacturer} ${f.model}${f.mode ? ` — ${f.mode}` : ""}`,
-      color: f.color,
-      dataKey: `t_${f.id}`,
+    const lineConfigs = series.map((s) => ({
+      id: s.id,
+      key: encodeKey(s.id),
+      name: s.mode === "Normal" ? s.flashName : `${s.flashName} — ${s.mode}`,
+      color: s.color,
+      dashPattern: s.dashPattern,
     }));
     return { combinedData, lineConfigs };
-  }, [flashes]);
+  }, [series]);
 
-  // Axis domains — computed across visible data so toggling flashes rescales sensibly.
   const { xDomain, yDomain, xTicks, yTicks } = useMemo(() => {
     const allX: number[] = [];
     const allY: number[] = [];
     for (const row of combinedData) {
       allX.push(row.power);
-      for (const f of flashes) {
-        const v = row[`t_${f.id}`];
+      for (const cfg of lineConfigs) {
+        const v = row[`t_${cfg.key}`];
         if (typeof v === "number") allY.push(v);
       }
     }
@@ -80,7 +77,6 @@ export function FlashChart({
     const xmax = Math.max(...allX);
     const ymin = Math.min(...allY);
     const ymax = Math.max(...allY);
-    // Snap to log-decade/log2 bounds
     const xLo = Math.pow(2, Math.floor(Math.log2(xmin)));
     const xHi = Math.pow(2, Math.ceil(Math.log2(xmax)));
     const yLo = Math.pow(10, Math.floor(Math.log10(ymin)));
@@ -91,7 +87,7 @@ export function FlashChart({
       xTicks: powerTicks(xLo, Math.max(xHi, xLo * 2)),
       yTicks: durationTicks(yLo, Math.max(yHi, yLo * 10)),
     };
-  }, [combinedData, flashes]);
+  }, [combinedData, lineConfigs]);
 
   return (
     <div className="h-[520px] w-full">
@@ -142,10 +138,11 @@ export function FlashChart({
             <Line
               key={cfg.id}
               name={cfg.name}
-              dataKey={cfg.dataKey}
+              dataKey={`t_${cfg.key}`}
               type="monotone"
               stroke={cfg.color}
               strokeWidth={2}
+              strokeDasharray={cfg.dashPattern}
               dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }}
               activeDot={{ r: 5 }}
               isAnimationActive={false}
@@ -156,6 +153,12 @@ export function FlashChart({
       </ResponsiveContainer>
     </div>
   );
+}
+
+// Replace characters in a series id (e.g. `5:Freeze Mode`) that would be
+// unsafe in a Recharts dataKey.
+function encodeKey(id: string): string {
+  return id.replace(/[^a-zA-Z0-9]/g, "_");
 }
 
 function formatPower(power: number, axis: PowerAxis): string {
@@ -201,8 +204,6 @@ function CustomTooltip({
   durationAxis: DurationAxis;
 }) {
   if (!active || !payload || payload.length === 0) return null;
-  // All payload entries share the same parent data row (one row per power
-  // value). Read per-flash data via the dataKey suffix (`t_<flashId>` etc.).
   const row = payload[0].payload;
   if (!row) return null;
   return (
@@ -216,21 +217,21 @@ function CustomTooltip({
       {payload
         .filter((p) => p.value != null)
         .map((p, i) => {
-          const flashId = String(p.dataKey).replace(/^t_/, "");
+          const key = String(p.dataKey).replace(/^t_/, "");
           const t = p.value as number;
-          const ws = row[`ws_${flashId}`] as number | null | undefined;
-          const ct = row[`ct_${flashId}`] as number | null | undefined;
-          const flashName = (row[`name_${flashId}`] as string | undefined) ?? p.name;
+          const ws = row[`ws_${key}`] as number | null | undefined;
+          const ct = row[`ct_${key}`] as number | null | undefined;
+          const name = (row[`name_${key}`] as string | undefined) ?? p.name;
           return (
-          <div key={i} className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-            <span className="flex-1 truncate">{flashName}</span>
-            {ws != null ? <span className="font-mono text-muted-foreground">{formatWs(ws)}</span> : null}
-            <span className="font-mono">
-              {durationAxis === "one-over-x" ? secondsToOneOverX(t) : secondsToPrecise(t)}
-            </span>
-            {ct ? <span className="font-mono text-muted-foreground">{ct}K</span> : null}
-          </div>
+            <div key={i} className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
+              <span className="flex-1 truncate">{name}</span>
+              {ws != null ? <span className="font-mono text-muted-foreground">{formatWs(ws)}</span> : null}
+              <span className="font-mono">
+                {durationAxis === "one-over-x" ? secondsToOneOverX(t) : secondsToPrecise(t)}
+              </span>
+              {ct ? <span className="font-mono text-muted-foreground">{ct}K</span> : null}
+            </div>
           );
         })}
     </div>

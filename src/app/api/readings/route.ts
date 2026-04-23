@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const ReadingBody = z.object({
   flash_id: z.number().int().positive(),
+  mode: z.string().trim().min(1).max(40).default("Normal"),
   stops_below_full: z.number().min(-20).max(0),
   t_one_tenth_seconds: z.number().positive(),
   color_temp_k: z.number().int().min(1000).max(20000).nullable().optional(),
@@ -21,6 +22,7 @@ export async function POST(req: Request) {
   const body = parsed.data;
   try {
     const id = await createReading(body.flash_id, {
+      mode: body.mode,
       stops_below_full: body.stops_below_full,
       t_one_tenth_seconds: body.t_one_tenth_seconds,
       color_temp_k: body.color_temp_k ?? null,

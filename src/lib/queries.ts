@@ -29,7 +29,6 @@ export type FlashInput = {
   manufacturer: string;
   model: string;
   slug: string;
-  mode?: string | null;
   firmware?: string | null;
   rated_ws?: number | null;
   tested_on?: string | null;
@@ -38,13 +37,12 @@ export type FlashInput = {
 
 export async function createFlash(input: FlashInput): Promise<number> {
   const [res] = await getPool().query<ResultSetHeader>(
-    `INSERT INTO flashes (manufacturer, model, slug, mode, firmware, rated_ws, tested_on, notes)
-     VALUES (:manufacturer, :model, :slug, :mode, :firmware, :rated_ws, :tested_on, :notes)`,
+    `INSERT INTO flashes (manufacturer, model, slug, firmware, rated_ws, tested_on, notes)
+     VALUES (:manufacturer, :model, :slug, :firmware, :rated_ws, :tested_on, :notes)`,
     {
       manufacturer: input.manufacturer,
       model: input.model,
       slug: input.slug,
-      mode: input.mode ?? null,
       firmware: input.firmware ?? null,
       rated_ws: input.rated_ws ?? null,
       tested_on: input.tested_on ?? null,
@@ -60,7 +58,6 @@ export async function updateFlash(id: number, input: FlashInput): Promise<void> 
        SET manufacturer = :manufacturer,
            model        = :model,
            slug         = :slug,
-           mode         = :mode,
            firmware     = :firmware,
            rated_ws     = :rated_ws,
            tested_on    = :tested_on,
@@ -71,7 +68,6 @@ export async function updateFlash(id: number, input: FlashInput): Promise<void> 
       manufacturer: input.manufacturer,
       model: input.model,
       slug: input.slug,
-      mode: input.mode ?? null,
       firmware: input.firmware ?? null,
       rated_ws: input.rated_ws ?? null,
       tested_on: input.tested_on ?? null,
@@ -86,13 +82,14 @@ export async function deleteFlash(id: number): Promise<void> {
 
 export async function listReadings(flashId: number): Promise<Reading[]> {
   const [rows] = await getPool().query<RowDataPacket[]>(
-    "SELECT * FROM readings WHERE flash_id = :flashId ORDER BY stops_below_full DESC",
+    "SELECT * FROM readings WHERE flash_id = :flashId ORDER BY mode, stops_below_full DESC",
     { flashId }
   );
   return rows as Reading[];
 }
 
 export type ReadingInput = {
+  mode: string;
   stops_below_full: number;
   t_one_tenth_seconds: number;
   color_temp_k?: number | null;
@@ -104,10 +101,11 @@ export async function createReading(
   input: ReadingInput
 ): Promise<number> {
   const [res] = await getPool().query<ResultSetHeader>(
-    `INSERT INTO readings (flash_id, stops_below_full, t_one_tenth_seconds, color_temp_k, notes)
-     VALUES (:flash_id, :stops, :t01, :ct, :notes)`,
+    `INSERT INTO readings (flash_id, mode, stops_below_full, t_one_tenth_seconds, color_temp_k, notes)
+     VALUES (:flash_id, :mode, :stops, :t01, :ct, :notes)`,
     {
       flash_id: flashId,
+      mode: input.mode,
       stops: input.stops_below_full,
       t01: input.t_one_tenth_seconds,
       ct: input.color_temp_k ?? null,
@@ -120,13 +118,15 @@ export async function createReading(
 export async function updateReading(id: number, input: ReadingInput): Promise<void> {
   await getPool().query(
     `UPDATE readings
-       SET stops_below_full    = :stops,
+       SET mode                = :mode,
+           stops_below_full    = :stops,
            t_one_tenth_seconds = :t01,
            color_temp_k        = :ct,
            notes               = :notes
      WHERE id = :id`,
     {
       id,
+      mode: input.mode,
       stops: input.stops_below_full,
       t01: input.t_one_tenth_seconds,
       ct: input.color_temp_k ?? null,
@@ -146,7 +146,7 @@ export async function listAllWithReadings(): Promise<FlashWithReadings[]> {
   const flashes = flashRows as Flash[];
   if (flashes.length === 0) return [];
   const [readingRows] = await getPool().query<RowDataPacket[]>(
-    "SELECT * FROM readings ORDER BY flash_id, stops_below_full DESC"
+    "SELECT * FROM readings ORDER BY flash_id, mode, stops_below_full DESC"
   );
   const readings = readingRows as Reading[];
   const byFlash = new Map<number, Reading[]>();

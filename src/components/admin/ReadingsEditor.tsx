@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Reading } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parsePowerInput, stopsToExactInput } from "@/lib/power";
 import { parseDurationInput, secondsToExactInput } from "@/lib/duration";
+import { cn } from "@/lib/cn";
 
 type Draft = {
   id: number | null;
+  mode: string;
   powerInput: string;
   durationInput: string;
   colorTempInput: string;
@@ -24,6 +26,7 @@ type Draft = {
 function draftFromReading(r: Reading): Draft {
   return {
     id: r.id,
+    mode: r.mode,
     powerInput: stopsToExactInput(r.stops_below_full),
     durationInput: secondsToExactInput(r.t_one_tenth_seconds),
     colorTempInput: r.color_temp_k != null ? String(r.color_temp_k) : "",
@@ -35,9 +38,10 @@ function draftFromReading(r: Reading): Draft {
   };
 }
 
-function emptyDraft(): Draft {
+function emptyDraft(mode: string): Draft {
   return {
     id: null,
+    mode,
     powerInput: "",
     durationInput: "",
     colorTempInput: "",
@@ -49,10 +53,33 @@ function emptyDraft(): Draft {
   };
 }
 
+// Sort modes so "Normal" comes first, then the rest alphabetically.
+function sortModes(modes: string[]): string[] {
+  return [...modes].sort((a, b) => {
+    if (a === b) return 0;
+    if (a === "Normal") return -1;
+    if (b === "Normal") return 1;
+    return a.localeCompare(b);
+  });
+}
+
 export function ReadingsEditor({ flashId, initial }: { flashId: number; initial: Reading[] }) {
   const router = useRouter();
   const [rows, setRows] = useState<Draft[]>(() => initial.map(draftFromReading));
-  const [newRow, setNewRow] = useState<Draft>(emptyDraft());
+
+  const knownModes = useMemo(() => {
+    const s = new Set<string>(rows.map((r) => r.mode));
+    if (s.size === 0) s.add("Normal");
+    return sortModes(Array.from(s));
+  }, [rows]);
+
+  const [activeMode, setActiveMode] = useState<string>(knownModes[0] ?? "Normal");
+  const [newRow, setNewRow] = useState<Draft>(() => emptyDraft(activeMode));
+
+  // Keep activeMode in sync when modes disappear (last row of a mode deleted).
+  if (!knownModes.includes(activeMode) && knownModes.length > 0) {
+    setTimeout(() => setActiveMode(knownModes[0]), 0);
+  }
 
   function updateRow(idx: number, patch: Partial<Draft>) {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch, dirty: true } : r)));
@@ -78,6 +105,7 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode: row.mode,
           stops_below_full: stops,
           t_one_tenth_seconds: seconds,
           color_temp_k: ct,
@@ -129,6 +157,7 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           flash_id: flashId,
+          mode: activeMode,
           stops_below_full: stops,
           t_one_tenth_seconds: seconds,
           color_temp_k: ct,
@@ -142,6 +171,7 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
           ...prev,
           {
             id: body.id,
+            mode: activeMode,
             powerInput: newRow.powerInput,
             durationInput: newRow.durationInput,
             colorTempInput: ct != null ? String(ct) : "",
@@ -151,17 +181,79 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
             dirty: false,
             saving: false,
           },
-        ].sort((a, b) => (b.savedStops ?? 0) - (a.savedStops ?? 0))
+        ]
       );
-      setNewRow(emptyDraft());
+      setNewRow(emptyDraft(activeMode));
       router.refresh();
     } catch (err: any) {
       setNewRow((p) => ({ ...p, saving: false, error: err.message }));
     }
   }
 
+  function addMode() {
+    const raw = window.prompt("New mode name (e.g. Freeze, Color, Action):");
+    const trimmed = raw?.trim();
+    if (!trimmed) return;
+    if (trimmed.length > 40) {
+      window.alert("Mode name must be 40 characters or fewer");
+      return;
+    }
+    if (knownModes.includes(trimmed)) {
+      // Already exists — just switch to it
+      setActiveMode(trimmed);
+      setNewRow(emptyDraft(trimmed));
+      return;
+    }
+    setActiveMode(trimmed);
+    setNewRow(emptyDraft(trimmed));
+  }
+
+  // Rows for the currently-selected mode tab, sorted by stops descending.
+  const visibleRows = useMemo(() => {
+    const list = rows
+      .map((r, origIdx) => ({ r, origIdx }))
+      .filter(({ r }) => r.mode === activeMode);
+    list.sort((a, b) => (b.r.savedStops ?? 0) - (a.r.savedStops ?? 0));
+    return list;
+  }, [rows, activeMode]);
+
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-1 border-b pb-2">
+        {knownModes.map((m) => {
+          const count = rows.filter((r) => r.mode === m).length;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setActiveMode(m);
+                setNewRow(emptyDraft(m));
+              }}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                m === activeMode
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              {m}
+              <span className={cn("rounded px-1 text-[10px]", m === activeMode ? "bg-primary-foreground/20" : "bg-muted")}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={addMode}
+          className="inline-flex items-center rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          title="Add new mode"
+        >
+          + add mode
+        </button>
+      </div>
+
       <div className="rounded-md border">
         <div className="grid grid-cols-[1.1fr,1.2fr,0.9fr,1.5fr,auto] gap-2 border-b bg-muted/40 px-3 py-2 text-[11px] uppercase tracking-wide text-muted-foreground">
           <span>Power</span>
@@ -171,10 +263,12 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
           <span />
         </div>
 
-        {rows.length === 0 ? (
-          <p className="px-3 py-4 text-center text-sm text-muted-foreground">No readings yet. Add one below.</p>
+        {visibleRows.length === 0 ? (
+          <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+            No readings in <span className="font-medium text-foreground">{activeMode}</span> yet. Add one below.
+          </p>
         ) : (
-          rows.map((row, idx) => (
+          visibleRows.map(({ r: row, origIdx: idx }) => (
             <div key={row.id ?? idx} className="grid grid-cols-[1.1fr,1.2fr,0.9fr,1.5fr,auto] gap-2 border-b px-3 py-2 last:border-b-0">
               <Input
                 value={row.powerInput}
@@ -211,7 +305,9 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
       </div>
 
       <div className="rounded-md border border-dashed p-3">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Add reading</p>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Add reading to <span className="text-foreground">{activeMode}</span>
+        </p>
         <div className="grid grid-cols-[1.1fr,1.2fr,0.9fr,1.5fr,auto] gap-2">
           <Input value={newRow.powerInput} onChange={(e) => updateNew({ powerInput: e.target.value })} placeholder="1/32 or -5" />
           <Input value={newRow.durationInput} onChange={(e) => updateNew({ durationInput: e.target.value })} placeholder="1/4000 or 0.00025" />

@@ -1,6 +1,6 @@
 "use client";
 
-import type { FlashWithReadings } from "@/lib/types";
+import type { ColoredFlash } from "./FlashChartView";
 import { Checkbox } from "./ui/checkbox";
 
 export function FlashPicker({
@@ -8,18 +8,38 @@ export function FlashPicker({
   selected,
   onChange,
 }: {
-  flashes: (FlashWithReadings & { color: string })[];
-  selected: Set<number>;
-  onChange: (next: Set<number>) => void;
+  flashes: ColoredFlash[];
+  selected: Set<string>; // keys: `${flashId}:${mode}`
+  onChange: (next: Set<string>) => void;
 }) {
-  function toggle(id: number) {
+  function seriesKey(flashId: number, mode: string) {
+    return `${flashId}:${mode}`;
+  }
+
+  function toggleSeries(flashId: number, mode: string) {
     const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    const k = seriesKey(flashId, mode);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
     onChange(next);
   }
+
+  function toggleAllForFlash(flashId: number, modes: string[]) {
+    const keys = modes.map((m) => seriesKey(flashId, m));
+    const allOn = keys.every((k) => selected.has(k));
+    const next = new Set(selected);
+    if (allOn) {
+      keys.forEach((k) => next.delete(k));
+    } else {
+      keys.forEach((k) => next.add(k));
+    }
+    onChange(next);
+  }
+
   function allOn() {
-    onChange(new Set(flashes.map((f) => f.id)));
+    const next = new Set<string>();
+    for (const f of flashes) for (const m of f.modes) next.add(seriesKey(f.id, m));
+    onChange(next);
   }
   function allOff() {
     onChange(new Set());
@@ -39,29 +59,59 @@ export function FlashPicker({
           </button>
         </div>
       </div>
-      <ul className="space-y-1">
-        {flashes.map((f) => (
-          <li key={f.id}>
-            <label className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 hover:bg-accent">
-              <Checkbox checked={selected.has(f.id)} onCheckedChange={() => toggle(f.id)} className="mt-0.5" />
-              <span className="flex-1 text-sm leading-snug">
-                <span className="inline-block h-2 w-2 rounded-full align-middle" style={{ background: f.color }} />
-                <span className="ml-2 align-middle">
-                  <span className="text-muted-foreground">{f.manufacturer}</span> {f.model}
-                </span>
-                {f.mode ? (
-                  <span className="ml-1 inline-block rounded bg-muted px-1.5 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {f.mode}
+      <ul className="space-y-2">
+        {flashes.map((f) => {
+          const modes = f.modes;
+          const flashKeys = modes.map((m) => seriesKey(f.id, m));
+          const flashAllOn = modes.length > 0 && flashKeys.every((k) => selected.has(k));
+          const flashSomeOn = flashKeys.some((k) => selected.has(k));
+          const totalReadings = f.readings.length;
+          const showNestedModes = modes.length > 1 || (modes.length === 1 && modes[0] !== "Normal");
+          return (
+            <li key={f.id}>
+              <label className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 hover:bg-accent">
+                <Checkbox
+                  checked={flashAllOn ? true : flashSomeOn ? "indeterminate" : false}
+                  onCheckedChange={() => toggleAllForFlash(f.id, modes)}
+                  className="mt-0.5"
+                />
+                <span className="flex-1 text-sm leading-snug">
+                  <span className="inline-block h-2 w-2 rounded-full align-middle" style={{ background: f.color }} />
+                  <span className="ml-2 align-middle">
+                    <span className="text-muted-foreground">{f.manufacturer}</span> {f.model}
                   </span>
-                ) : null}
-                {f.rated_ws != null ? (
-                  <span className="ml-1 text-xs font-mono text-muted-foreground">· {f.rated_ws} Ws</span>
-                ) : null}
-                <span className="ml-1 text-xs text-muted-foreground">· {f.readings.length} pts</span>
-              </span>
-            </label>
-          </li>
-        ))}
+                  {f.rated_ws != null ? (
+                    <span className="ml-1 text-xs font-mono text-muted-foreground">· {f.rated_ws} Ws</span>
+                  ) : null}
+                  <span className="ml-1 text-xs text-muted-foreground">· {totalReadings} pts</span>
+                </span>
+              </label>
+              {showNestedModes ? (
+                <ul className="ml-6 mt-0.5 space-y-0.5 border-l border-border/60 pl-2">
+                  {modes.map((m) => {
+                    const k = seriesKey(f.id, m);
+                    const pts = f.readings.filter((r) => r.mode === m).length;
+                    return (
+                      <li key={m}>
+                        <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-0.5 hover:bg-accent">
+                          <Checkbox
+                            checked={selected.has(k)}
+                            onCheckedChange={() => toggleSeries(f.id, m)}
+                            className="h-3.5 w-3.5"
+                          />
+                          <span className="flex-1 text-xs">
+                            {m}
+                            <span className="ml-1 text-muted-foreground">· {pts} pts</span>
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
