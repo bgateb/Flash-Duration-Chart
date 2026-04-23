@@ -14,17 +14,14 @@
 # before our proxy rule runs. Without this, Next.js sees /index.html and 404s.
 DirectoryIndex disabled
 
-# DreamHost runs mod_security3 with the OWASP Core Rule Set. Several of its
-# default rules fire on Next.js's chunk URLs (which contain "(gated)", "[id]",
-# etc. — patterns the CRS flags as potential RCE/SQLi), silently returning 404.
-# Our own FilesMatch/RewriteRule rules below already deny access to .env files,
-# sources, node_modules, and .git, so losing the CRS here is acceptable.
-<IfModule security3_module>
-    SecRuleEngine Off
-</IfModule>
-<IfModule security2_module>
-    SecRuleEngine Off
-</IfModule>
+# NOTE: DreamHost's mod_security3 + OWASP CRS silently 404s Next.js chunk
+# URLs that contain "(gated)" (route groups) or "%5B"/"%5D" (dynamic route
+# segments). SecRuleEngine cannot be disabled from .htaccess on DreamHost
+# (the AllowOverride config forbids it). Instead, turn off ModSecurity for
+# this subdomain in the DreamHost panel:
+#     Websites → ModSecurity → (your subdomain) → Disable
+# Our own FilesMatch/RewriteRule rules below still deny access to .env,
+# node_modules, .git, src, and other sensitive paths.
 
 # ─── Deny direct access to sensitive files ─────────────────────────────────
 <FilesMatch "^\.env">
