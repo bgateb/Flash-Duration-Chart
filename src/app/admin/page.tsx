@@ -53,7 +53,7 @@ export default async function AdminHome() {
                   <td className="px-4 py-2.5 text-right font-mono">{f.readings.length}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{f.tested_on ?? "—"}</td>
                   <td className="px-4 py-2.5 text-right">
-                    <Link className="text-sm font-medium underline-offset-4 hover:underline" href={`/admin/flashes/${f.id}`}>
+                    <Link className="text-sm font-medium underline-offset-4 hover:underline" href={`/admin/flashes/edit?id=${f.id}`}>
                       edit
                     </Link>
                   </td>

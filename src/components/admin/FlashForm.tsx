@@ -53,7 +53,7 @@ export function FlashForm({ initial }: { initial?: Flash }) {
       }
       const body = await res.json();
       if (!initial && body.id) {
-        router.push(`/admin/flashes/${body.id}`);
+        router.push(`/admin/flashes/edit?id=${body.id}`);
       } else {
         router.refresh();
       }

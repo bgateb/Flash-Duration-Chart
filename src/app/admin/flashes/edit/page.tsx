@@ -7,8 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
-export default async function FlashDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function FlashDetailPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ id?: string }>;
+}) {
+  const { id } = await searchParams;
   const n = Number(id);
   if (!Number.isInteger(n) || n <= 0) notFound();
   const flash = await getFlash(n);
