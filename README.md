@@ -91,29 +91,75 @@ npm run build
 npm start
 ```
 
-## Deploying on cPanel (Node.js Selector)
+## Deploying to the DreamHost VPS
 
-1. In cPanel, open **Setup Node.js App** → **Create Application**.
-2. Node version: 20 or newer. Application root: `apps/flashduration`. Application URL: your chosen subdomain (e.g. `flashduration.example.com`).
-3. Application startup file: leave default; we'll override the start command.
-4. In the application's shell: `npm install && npm run build`.
-5. Add all env vars from `.env.local.example` via the cPanel UI.
-6. In **Startup File**, point to `node_modules/next/dist/bin/next` and set the **application startup command** to `start -p $PORT` (the exact UI varies). Alternatively, set the startup file to a small `server.js`:
+The repo ships with two helper scripts designed for this app's VPS:
+`~/flashduration.bgateb.com` on Ubuntu 22, Node 20 via nvm, pm2 already installed,
+Apache serving the subdomain.
 
-   ```js
-   require("next/dist/bin/next").default();
+### First-run (one time)
+
+1. Create the GitHub repo (private), push this code to it. From your Mac:
+
+   ```bash
+   git remote add origin git@github.com:<you>/<repo>.git
+   git push -u origin main
    ```
 
-7. Restart the application. cPanel's Passenger will reverse-proxy HTTP to your Node process.
+2. Run the first-run setup script against the VPS:
 
-## Deploying on a plain VPS
+   ```bash
+   FLASHDURATION_REPO=git@github.com:<you>/<repo>.git ./scripts/first-run-setup.sh
+   ```
+
+   On the first pass it generates a read-only SSH deploy key on the VPS and
+   prints the public key. Add it to the GitHub repo under
+   **Settings → Deploy keys → Add deploy key** (read-only), then re-run.
+
+3. When the script prompts that `.env.local` is missing, edit it on the VPS
+   (`ssh vps`, then edit `~/flashduration.bgateb.com/.env.local`) with your
+   MySQL creds, `ADMIN_PASSWORD`, and a 32+ char `SESSION_SECRET`, then re-run
+   the script.
+
+4. Apply the MySQL schema once (the VPS has the `mysql` client):
+
+   ```bash
+   ssh vps 'cd ~/flashduration.bgateb.com && \
+     mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p "$MYSQL_DATABASE" < db/schema.sql'
+   ```
+
+5. If the subdomain doesn't route to the app (502 / timeout), either:
+
+   - Confirm `mod_proxy_http` is active on the VPS (the default `.htaccess` from
+     [vps/htaccess.example](vps/htaccess.example) uses it), **or**
+   - In the DreamHost panel, enable **Proxy Server** for
+     `flashduration.bgateb.com` pointing at `http://127.0.0.1:3000/`, and
+     remove the `.htaccess`.
+
+6. To make pm2 resurrect on reboot, SSH in once and run `pm2 startup`, then
+   follow the `sudo` line it prints.
+
+### Subsequent deploys
+
+From your Mac, inside `apps/flashduration/`:
 
 ```bash
-cd apps/flashduration
-npm install && npm run build
-pm2 start "npx next start -p 3000" --name flashduration
-# then reverse-proxy :3000 behind nginx on your chosen domain
+./scripts/deploy.sh
 ```
+
+That pushes the current branch to GitHub, SSHes into the VPS, pulls, runs
+`npm ci && npm run build`, and `pm2 reload flashduration`. Pass `--skip-push`
+if you've already pushed.
+
+### Env vars the scripts respect
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `FLASHDURATION_HOST` | `vps` | SSH host alias |
+| `FLASHDURATION_DIR` | `/home/bgatebvps/flashduration.bgateb.com` | Deploy path on VPS |
+| `FLASHDURATION_BRANCH` | `main` | Branch to deploy |
+| `FLASHDURATION_REPO` | _(required for first-run)_ | Repo URL, `git@github.com:…` |
+| `FLASHDURATION_PM2_NAME` | `flashduration` | pm2 app name |
 
 ## Project structure
 

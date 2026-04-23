@@ -1,0 +1,26 @@
+# Copy this file to /home/bgatebvps/flashduration.bgateb.com/.htaccess on the VPS.
+#
+# What it does:
+#   1. Routes every request to the local Node process (pm2, port 3000).
+#   2. Denies web access to sensitive repo files, as belt-and-suspenders in case
+#      the proxy is ever disabled — .env.local, node_modules, .git, sources.
+#
+# Requires the Apache mod_rewrite + mod_proxy_http modules, which DreamHost
+# usually has enabled on VPS. If the proxy rule produces a 500/503 when
+# flashduration.bgateb.com is hit, enable "Proxy Server" for the subdomain
+# in the DreamHost panel instead, pointing at http://127.0.0.1:3000/.
+
+# ─── Deny direct access to sensitive files ─────────────────────────────────
+<FilesMatch "^\.env">
+    Require all denied
+</FilesMatch>
+<FilesMatch "^(package\.json|package-lock\.json|tsconfig\.json|next\.config\.mjs|tailwind\.config\.ts|postcss\.config\.mjs|next-env\.d\.ts|ecosystem\.config\.cjs|README\.md)$">
+    Require all denied
+</FilesMatch>
+
+RewriteEngine On
+RewriteRule ^(\.git|node_modules|src|db|scripts|vps|logs|tmp)(/.*)?$ - [F,L]
+
+# ─── Proxy everything else to the Node process ─────────────────────────────
+RewriteCond %{REQUEST_URI} !^/\.well-known/
+RewriteRule ^(.*)$ http://127.0.0.1:3000/$1 [P,L]
