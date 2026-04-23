@@ -75,10 +75,9 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
     return list;
   }, [colored]);
 
-  // Selection keyed by series id. Default: everything visible.
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(allSeries.map((s) => s.id))
-  );
+  // Selection keyed by series id. Default: nothing selected — user picks what
+  // to display so first load isn't a wall of overlapping lines.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [powerAxis, setPowerAxis] = useState<PowerAxis>("fraction");
   const [durationAxis, setDurationAxis] = useState<DurationAxis>("one-over-x");
 
