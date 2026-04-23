@@ -10,6 +10,10 @@
 # flashduration.bgateb.com is hit, enable "Proxy Server" for the subdomain
 # in the DreamHost panel instead, pointing at http://127.0.0.1:3000/.
 
+# Disable DirectoryIndex so Apache doesn't rewrite "/" to "/index.html"
+# before our proxy rule runs. Without this, Next.js sees /index.html and 404s.
+DirectoryIndex disabled
+
 # ─── Deny direct access to sensitive files ─────────────────────────────────
 <FilesMatch "^\.env">
     Require all denied
