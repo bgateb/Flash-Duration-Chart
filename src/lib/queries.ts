@@ -1,6 +1,6 @@
 import { getPool } from "./db";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
-import type { Flash, FlashWithReadings, Reading } from "./types";
+import type { Flash, FlashType, FlashWithReadings, Reading } from "./types";
 
 export async function listFlashes(): Promise<Flash[]> {
   const [rows] = await getPool().query<RowDataPacket[]>(
@@ -28,6 +28,7 @@ export async function getFlashBySlug(slug: string): Promise<Flash | null> {
 export type FlashInput = {
   manufacturer: string;
   model: string;
+  type?: FlashType | null;
   slug: string;
   firmware?: string | null;
   rated_ws?: number | null;
@@ -37,11 +38,12 @@ export type FlashInput = {
 
 export async function createFlash(input: FlashInput): Promise<number> {
   const [res] = await getPool().query<ResultSetHeader>(
-    `INSERT INTO flashes (manufacturer, model, slug, firmware, rated_ws, tested_on, notes)
-     VALUES (:manufacturer, :model, :slug, :firmware, :rated_ws, :tested_on, :notes)`,
+    `INSERT INTO flashes (manufacturer, model, type, slug, firmware, rated_ws, tested_on, notes)
+     VALUES (:manufacturer, :model, :type, :slug, :firmware, :rated_ws, :tested_on, :notes)`,
     {
       manufacturer: input.manufacturer,
       model: input.model,
+      type: input.type ?? null,
       slug: input.slug,
       firmware: input.firmware ?? null,
       rated_ws: input.rated_ws ?? null,
@@ -57,6 +59,7 @@ export async function updateFlash(id: number, input: FlashInput): Promise<void> 
     `UPDATE flashes
        SET manufacturer = :manufacturer,
            model        = :model,
+           type         = :type,
            slug         = :slug,
            firmware     = :firmware,
            rated_ws     = :rated_ws,
@@ -67,6 +70,7 @@ export async function updateFlash(id: number, input: FlashInput): Promise<void> 
       id,
       manufacturer: input.manufacturer,
       model: input.model,
+      type: input.type ?? null,
       slug: input.slug,
       firmware: input.firmware ?? null,
       rated_ws: input.rated_ws ?? null,

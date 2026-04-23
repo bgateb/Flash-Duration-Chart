@@ -3,6 +3,7 @@ import { z } from "zod";
 import { badRequest, guardAdmin, notFound } from "@/lib/api";
 import { deleteFlash, getFlash, listReadings, updateFlash } from "@/lib/queries";
 import { slugify } from "@/lib/slug";
+import { FLASH_TYPES } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 const PatchBody = z.object({
   manufacturer: z.string().trim().min(1).max(100),
   model: z.string().trim().min(1).max(200),
+  type: z.enum(FLASH_TYPES).nullable().optional(),
   slug: z.string().trim().max(220).optional(),
   firmware: z.string().trim().max(100).nullable().optional(),
   rated_ws: z.number().int().min(0).max(65535).nullable().optional(),
@@ -47,6 +49,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     await updateFlash(n, {
       manufacturer: body.manufacturer,
       model: body.model,
+      type: body.type ?? null,
       slug,
       firmware: body.firmware ?? null,
       rated_ws: body.rated_ws ?? null,

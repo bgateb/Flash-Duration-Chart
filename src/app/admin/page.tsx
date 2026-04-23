@@ -38,6 +38,7 @@ export default async function AdminHome() {
               <tr>
                 <th className="px-4 py-2.5 text-left font-medium">Manufacturer</th>
                 <th className="px-4 py-2.5 text-left font-medium">Model</th>
+                <th className="px-4 py-2.5 text-left font-medium">Type</th>
                 <th className="px-4 py-2.5 text-right font-medium">Rated</th>
                 <th className="px-4 py-2.5 text-left font-medium">Modes</th>
                 <th className="px-4 py-2.5 text-right font-medium">Readings</th>
@@ -52,6 +53,7 @@ export default async function AdminHome() {
                   <tr key={f.id} className="border-t border-border/60 hover:bg-accent/40">
                     <td className="px-4 py-2.5">{f.manufacturer}</td>
                     <td className="px-4 py-2.5 font-medium">{f.model}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{f.type ?? "—"}</td>
                     <td className="px-4 py-2.5 text-right font-mono">{f.rated_ws != null ? `${f.rated_ws} Ws` : "—"}</td>
                     <td className="px-4 py-2.5 text-muted-foreground">{modes.length > 0 ? modes.join(" · ") : "—"}</td>
                     <td className="px-4 py-2.5 text-right font-mono">{f.readings.length}</td>

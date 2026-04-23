@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Flash } from "@/lib/types";
+import type { Flash, FlashType } from "@/lib/types";
+import { FLASH_TYPES } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ export function FlashForm({ initial }: { initial?: Flash }) {
   const [form, setForm] = useState({
     manufacturer: initial?.manufacturer ?? "",
     model: initial?.model ?? "",
+    type: initial?.type ?? "",
     slug: initial?.slug ?? "",
     firmware: initial?.firmware ?? "",
     rated_ws: initial?.rated_ws != null ? String(initial.rated_ws) : "",
@@ -39,6 +41,7 @@ export function FlashForm({ initial }: { initial?: Flash }) {
       const payload = {
         manufacturer: form.manufacturer.trim(),
         model: form.model.trim(),
+        type: form.type === "" ? null : (form.type as FlashType),
         slug: form.slug.trim() || undefined,
         firmware: form.firmware.trim() || null,
         rated_ws: ratedWs,
@@ -91,13 +94,28 @@ export function FlashForm({ initial }: { initial?: Flash }) {
         <Field label="Model" required value={form.model} onChange={(v) => set("model", v)} />
       </div>
       <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Type</Label>
+          <select
+            value={form.type}
+            onChange={(e) => set("type", e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="">—</option>
+            {FLASH_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
         <Field label="Rated power (Ws)" placeholder="e.g. 200" value={form.rated_ws} onChange={(v) => set("rated_ws", v)} />
-        <Field label="Firmware" value={form.firmware} onChange={(v) => set("firmware", v)} />
       </div>
       <div className="grid grid-cols-2 gap-3">
+        <Field label="Firmware" value={form.firmware} onChange={(v) => set("firmware", v)} />
         <Field label="Tested on" type="date" value={form.tested_on ?? ""} onChange={(v) => set("tested_on", v)} />
-        <Field label="Slug (optional)" placeholder="auto from make + model" value={form.slug} onChange={(v) => set("slug", v)} />
       </div>
+      <Field label="Slug (optional)" placeholder="auto from make + model" value={form.slug} onChange={(v) => set("slug", v)} />
       <div className="space-y-1.5">
         <Label>Notes</Label>
         <textarea

@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS flashes (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   manufacturer  VARCHAR(100)      NOT NULL,
   model         VARCHAR(200)      NOT NULL,
+  type          VARCHAR(40)       NULL,
   slug          VARCHAR(220)      NOT NULL UNIQUE,
   firmware      VARCHAR(100)      NULL,
   rated_ws      SMALLINT UNSIGNED NULL,

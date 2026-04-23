@@ -1,7 +1,16 @@
+export const FLASH_TYPES = [
+  "Pack + Head",
+  "Speedlight",
+  "Monobloc",
+  "Battery-powered Monobloc",
+] as const;
+export type FlashType = (typeof FLASH_TYPES)[number];
+
 export type Flash = {
   id: number;
   manufacturer: string;
   model: string;
+  type: FlashType | null;
   slug: string;
   firmware: string | null;
   rated_ws: number | null;
