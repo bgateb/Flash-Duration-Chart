@@ -56,7 +56,7 @@ cp .env.local.example .env.local
 Then edit `.env.local`:
 
 - `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`
-- `ADMIN_PASSWORD` — chosen by you, used for `/admin/login`
+- `ADMIN_PASSWORD` — chosen by you, used for `/login`
 - `SESSION_SECRET` — must be 32+ chars. Generate with:
 
 ```bash
@@ -75,7 +75,7 @@ Visit:
 
 ## Usage
 
-1. Log in at `/admin/login` with `ADMIN_PASSWORD`.
+1. Log in at `/login` with `ADMIN_PASSWORD`.
 2. Click **Add flash** — enter manufacturer + model (e.g. `Godox` / `AD200 Pro`). `Mode` is free-form (`Normal`, `Freeze`, etc.) to distinguish different test configurations of the same unit.
 3. On the flash's edit page, add readings. Each reading accepts flexible input:
    - **Power:** `1/1`, `1/32`, or stops (`-5`). All normalize to stops.
@@ -176,14 +176,13 @@ apps/flashduration/
 │   │   │   ├── readings/route.ts
 │   │   │   ├── readings/[id]/route.ts
 │   │   │   └── auth/route.ts
-│   │   └── admin/
-│   │       ├── login/page.tsx
-│   │       └── (gated)/
-│   │           ├── layout.tsx           ← admin header
-│   │           ├── page.tsx             ← flash list
-│   │           └── flashes/
-│   │               ├── new/page.tsx
-│   │               └── [id]/page.tsx    ← edit flash + readings
+│   │   ├── login/page.tsx               ← password login
+│   │   └── admin/                       ← gated by layout.tsx
+│   │       ├── layout.tsx               ← admin header + auth gate
+│   │       ├── page.tsx                 ← flash list
+│   │       └── flashes/
+│   │           ├── new/page.tsx
+│   │           └── [id]/page.tsx        ← edit flash + readings
 │   ├── components/
 │   │   ├── FlashChart.tsx
 │   │   ├── FlashChartView.tsx

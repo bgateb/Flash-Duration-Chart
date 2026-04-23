@@ -6,7 +6,7 @@ export function LogoutButton() {
       type="button"
       onClick={async () => {
         await fetch("/api/auth", { method: "DELETE" });
-        window.location.href = "/admin/login";
+        window.location.href = "/login";
       }}
       className="text-xs text-muted-foreground hover:text-foreground"
     >

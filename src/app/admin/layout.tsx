@@ -5,9 +5,9 @@ import { requireAdmin } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export default async function GatedAdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const ok = await requireAdmin();
-  if (!ok) redirect("/admin/login");
+  if (!ok) redirect("/login");
 
   return (
     <div className="min-h-dvh bg-muted/30">
