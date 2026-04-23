@@ -32,28 +32,30 @@ ssh "$REMOTE_HOST" bash -s -- "$REMOTE_DIR" "$REMOTE_BRANCH" "$PM2_APP_NAME" <<'
 set -euo pipefail
 REMOTE_DIR="$1"; REMOTE_BRANCH="$2"; PM2_APP_NAME="$3"
 
-# Ensure we can find node/npm/pm2 even under a non-interactive ssh shell.
+# Prevent git from ever reading stdin — any prompt would eat the heredoc.
+export GIT_TERMINAL_PROMPT=0
+
 export NVM_DIR="$HOME/.nvm"
 [[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
 
 cd "$REMOTE_DIR"
 
 echo "→ git fetch && reset to origin/$REMOTE_BRANCH"
-git fetch --prune origin
-git reset --hard "origin/$REMOTE_BRANCH"
+git fetch --prune origin </dev/null
+git reset --hard "origin/$REMOTE_BRANCH" </dev/null
 
 echo "→ npm ci (production + dev for build)"
-npm ci --no-audit --no-fund
+npm ci --no-audit --no-fund </dev/null
 
 echo "→ next build"
-NODE_ENV=production npm run build
+NODE_ENV=production npm run build </dev/null
 
 echo "→ pm2 reload"
-if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
-  pm2 reload "$PM2_APP_NAME" --update-env
+if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1 </dev/null; then
+  pm2 reload "$PM2_APP_NAME" --update-env </dev/null
 else
-  pm2 start ecosystem.config.cjs
-  pm2 save
+  pm2 start ecosystem.config.cjs </dev/null
+  pm2 save </dev/null
 fi
 
 echo "✓ deploy complete"

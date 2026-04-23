@@ -32,6 +32,10 @@ ssh "$REMOTE_HOST" bash -s -- "$REMOTE_DIR" "$REMOTE_BRANCH" "$REPO_URL" "$PM2_A
 set -euo pipefail
 REMOTE_DIR="$1"; REMOTE_BRANCH="$2"; REPO_URL="$3"; PM2_APP_NAME="$4"
 
+# Git must never read stdin — any prompt would silently eat the rest of this
+# heredoc (ssh and git both default to inheriting parent stdin).
+export GIT_TERMINAL_PROMPT=0
+
 export NVM_DIR="$HOME/.nvm"
 [[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
 
@@ -68,7 +72,7 @@ fi
 # ─── 2. Verify GitHub access, bail with instructions if missing ────────────
 # Use 'ssh -G' to prove the host block resolves; then test auth by attempting
 # a harmless git command — it exits 0 when auth+access work, non-zero otherwise.
-AUTH_OUT="$(ssh -o StrictHostKeyChecking=accept-new -T github-flashduration 2>&1 || true)"
+AUTH_OUT="$(ssh -n -o StrictHostKeyChecking=accept-new -T github-flashduration 2>&1 || true)"
 if ! echo "$AUTH_OUT" | grep -q "successfully authenticated"; then
   echo ""
   echo "── ssh debug output ──"
@@ -91,12 +95,14 @@ if ! echo "$AUTH_OUT" | grep -q "successfully authenticated"; then
 fi
 
 # ─── 3. Clone (or pull) the repo into the target dir ───────────────────────
+# All git commands redirect stdin from /dev/null so they can't accidentally
+# drain the outer heredoc.
 if [[ -d "$REMOTE_DIR/.git" ]]; then
   echo "→ repo already cloned, pulling"
   cd "$REMOTE_DIR"
-  git remote set-url origin "$REMOTE_URL"
-  git fetch --prune origin
-  git reset --hard "origin/$REMOTE_BRANCH"
+  git remote set-url origin "$REMOTE_URL" </dev/null
+  git fetch --prune origin </dev/null
+  git reset --hard "origin/$REMOTE_BRANCH" </dev/null
 else
   echo "→ cloning into $REMOTE_DIR"
   # If the target is the subdomain docroot it may contain only favicons.
@@ -104,13 +110,12 @@ else
   if [[ -d "$REMOTE_DIR" ]] && [[ -n "$(ls -A "$REMOTE_DIR" 2>/dev/null)" ]]; then
     echo "  (target not empty — moving existing files to $REMOTE_DIR/.pre-clone-backup/)"
     mkdir -p "$REMOTE_DIR/.pre-clone-backup"
-    # Move everything except the backup dir itself
     find "$REMOTE_DIR" -mindepth 1 -maxdepth 1 \
         ! -name ".pre-clone-backup" \
         -exec mv -t "$REMOTE_DIR/.pre-clone-backup/" {} +
   fi
   mkdir -p "$REMOTE_DIR"
-  git clone --branch "$REMOTE_BRANCH" "$REMOTE_URL" "$REMOTE_DIR.tmp.$$"
+  git clone --branch "$REMOTE_BRANCH" "$REMOTE_URL" "$REMOTE_DIR.tmp.$$" </dev/null
   mv "$REMOTE_DIR.tmp.$$"/.git "$REMOTE_DIR/.git"
   mv "$REMOTE_DIR.tmp.$$"/* "$REMOTE_DIR"/ 2>/dev/null || true
   mv "$REMOTE_DIR.tmp.$$"/.[!.]* "$REMOTE_DIR"/ 2>/dev/null || true
@@ -139,20 +144,20 @@ fi
 
 # ─── 6. Install deps, build ────────────────────────────────────────────────
 echo "→ npm ci"
-npm ci --no-audit --no-fund
+npm ci --no-audit --no-fund </dev/null
 
 echo "→ next build"
-NODE_ENV=production npm run build
+NODE_ENV=production npm run build </dev/null
 
 # ─── 7. Start (or ensure) pm2 process ──────────────────────────────────────
 mkdir -p logs
-if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
+if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1 </dev/null; then
   echo "→ pm2: reloading existing '$PM2_APP_NAME' process"
-  pm2 reload "$PM2_APP_NAME" --update-env
+  pm2 reload "$PM2_APP_NAME" --update-env </dev/null
 else
   echo "→ pm2: starting '$PM2_APP_NAME' fresh"
-  pm2 start ecosystem.config.cjs
-  pm2 save
+  pm2 start ecosystem.config.cjs </dev/null
+  pm2 save </dev/null
   echo ""
   echo "  To make pm2 auto-start on reboot, run once manually on the VPS:"
   echo "    pm2 startup"
