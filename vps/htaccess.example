@@ -22,5 +22,8 @@ RewriteEngine On
 RewriteRule ^(\.git|node_modules|src|db|scripts|vps|logs|tmp)(/.*)?$ - [F,L]
 
 # ─── Proxy everything else to the Node process ─────────────────────────────
+# Use %{REQUEST_URI} so we pass the full path (including the leading slash)
+# verbatim to Next.js. Per-dir RewriteRule capture groups can collapse to an
+# empty string for the site root, producing a malformed upstream URL.
 RewriteCond %{REQUEST_URI} !^/\.well-known/
-RewriteRule ^(.*)$ http://127.0.0.1:3000/$1 [P,L]
+RewriteRule .* http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
