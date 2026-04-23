@@ -27,33 +27,46 @@ export function FlashChart({
   powerAxis: PowerAxis;
   durationAxis: DurationAxis;
 }) {
-  // Build one series per flash; each point carries power (as power fraction in [0,1]) and t.1 seconds.
-  const series = useMemo(() => {
-    return flashes.map((f) => ({
+  // Build a SHARED dataset (one row per unique power level, with one t/ws/ct
+  // column per flash). Recharts' tooltip can only correctly attribute payload
+  // entries when all <Line>s share the parent <LineChart>'s data — when each
+  // <Line> has its own data prop, the tooltip mis-shows the same point for all
+  // lines. The flash id is encoded in the dataKey suffix.
+  const { combinedData, lineConfigs } = useMemo(() => {
+    const xMap = new Map<number, Record<string, any>>();
+    for (const f of flashes) {
+      for (const r of f.readings) {
+        const x = Math.pow(2, r.stops_below_full);
+        const key = x;
+        if (!xMap.has(key)) xMap.set(key, { power: x, stops: r.stops_below_full });
+        const row = xMap.get(key)!;
+        row[`t_${f.id}`] = r.t_one_tenth_seconds;
+        row[`ws_${f.id}`] = effectiveWs(r.stops_below_full, f.rated_ws);
+        row[`ct_${f.id}`] = r.color_temp_k;
+        row[`notes_${f.id}`] = r.notes;
+        row[`name_${f.id}`] = `${f.manufacturer} ${f.model}`;
+      }
+    }
+    const combinedData = Array.from(xMap.values()).sort((a, b) => a.power - b.power);
+    const lineConfigs = flashes.map((f) => ({
       id: f.id,
       name: `${f.manufacturer} ${f.model}${f.mode ? ` — ${f.mode}` : ""}`,
       color: f.color,
-      data: f.readings
-        .map((r) => ({
-          power: Math.pow(2, r.stops_below_full), // 1, 0.5, 0.25, ...
-          stops: r.stops_below_full,
-          t: r.t_one_tenth_seconds,
-          ct: r.color_temp_k,
-          notes: r.notes,
-          flashName: `${f.manufacturer} ${f.model}`,
-          ws: effectiveWs(r.stops_below_full, f.rated_ws),
-        }))
-        .sort((a, b) => a.power - b.power),
+      dataKey: `t_${f.id}`,
     }));
+    return { combinedData, lineConfigs };
   }, [flashes]);
 
   // Axis domains — computed across visible data so toggling flashes rescales sensibly.
   const { xDomain, yDomain, xTicks, yTicks } = useMemo(() => {
     const allX: number[] = [];
     const allY: number[] = [];
-    for (const s of series) for (const p of s.data) {
-      allX.push(p.power);
-      allY.push(p.t);
+    for (const row of combinedData) {
+      allX.push(row.power);
+      for (const f of flashes) {
+        const v = row[`t_${f.id}`];
+        if (typeof v === "number") allY.push(v);
+      }
     }
     if (allX.length === 0) {
       return {
@@ -78,12 +91,12 @@ export function FlashChart({
       xTicks: powerTicks(xLo, Math.max(xHi, xLo * 2)),
       yTicks: durationTicks(yLo, Math.max(yHi, yLo * 10)),
     };
-  }, [series]);
+  }, [combinedData, flashes]);
 
   return (
     <div className="h-[520px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
+        <LineChart data={combinedData} margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
           <XAxis
             dataKey="power"
@@ -125,18 +138,18 @@ export function FlashChart({
             iconType="plainline"
             wrapperStyle={{ fontSize: 12 }}
           />
-          {series.map((s) => (
+          {lineConfigs.map((cfg) => (
             <Line
-              key={s.id}
-              name={s.name}
-              data={s.data}
-              dataKey="t"
+              key={cfg.id}
+              name={cfg.name}
+              dataKey={cfg.dataKey}
               type="monotone"
-              stroke={s.color}
+              stroke={cfg.color}
               strokeWidth={2}
-              dot={{ r: 3, fill: s.color, strokeWidth: 0 }}
+              dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }}
               activeDot={{ r: 5 }}
               isAnimationActive={false}
+              connectNulls
             />
           ))}
         </LineChart>
@@ -188,31 +201,38 @@ function CustomTooltip({
   durationAxis: DurationAxis;
 }) {
   if (!active || !payload || payload.length === 0) return null;
-  const rows = payload.map((p) => p.payload).filter(Boolean);
-  if (rows.length === 0) return null;
-  const first = rows[0];
+  // All payload entries share the same parent data row (one row per power
+  // value). Read per-flash data via the dataKey suffix (`t_<flashId>` etc.).
+  const row = payload[0].payload;
+  if (!row) return null;
   return (
     <div className="rounded-md border bg-card px-3 py-2 text-xs shadow-md">
       <div className="mb-1 font-semibold">
-        {formatPower(first.power, powerAxis)}{" "}
+        {formatPower(row.power, powerAxis)}{" "}
         <span className="text-muted-foreground">
-          ({powerAxis === "fraction" ? stopsToLabel(first.stops) + " stops" : stopsToFraction(first.stops)})
+          ({powerAxis === "fraction" ? stopsToLabel(row.stops) + " stops" : stopsToFraction(row.stops)})
         </span>
       </div>
-      {payload.map((p, i) => {
-        const d = p.payload;
-        return (
+      {payload
+        .filter((p) => p.value != null)
+        .map((p, i) => {
+          const flashId = String(p.dataKey).replace(/^t_/, "");
+          const t = p.value as number;
+          const ws = row[`ws_${flashId}`] as number | null | undefined;
+          const ct = row[`ct_${flashId}`] as number | null | undefined;
+          const flashName = (row[`name_${flashId}`] as string | undefined) ?? p.name;
+          return (
           <div key={i} className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-            <span className="flex-1 truncate">{d.flashName}</span>
-            {d.ws != null ? <span className="font-mono text-muted-foreground">{formatWs(d.ws)}</span> : null}
+            <span className="flex-1 truncate">{flashName}</span>
+            {ws != null ? <span className="font-mono text-muted-foreground">{formatWs(ws)}</span> : null}
             <span className="font-mono">
-              {durationAxis === "one-over-x" ? secondsToOneOverX(d.t) : secondsToPrecise(d.t)}
+              {durationAxis === "one-over-x" ? secondsToOneOverX(t) : secondsToPrecise(t)}
             </span>
-            {d.ct ? <span className="font-mono text-muted-foreground">{d.ct}K</span> : null}
+            {ct ? <span className="font-mono text-muted-foreground">{ct}K</span> : null}
           </div>
-        );
-      })}
+          );
+        })}
     </div>
   );
 }
