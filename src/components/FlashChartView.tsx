@@ -88,10 +88,11 @@ function AxisToggle({
   );
 }
 
-import { stopsToFraction, stopsToLabel } from "@/lib/power";
+import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 
 function ReadingsTable({ flashes }: { flashes: (FlashWithReadings & { color: string })[] }) {
+  const anyRated = flashes.some((f) => f.rated_ws != null);
   const rows = flashes.flatMap((f) =>
     f.readings.map((r) => ({
       id: `${f.id}-${r.id}`,
@@ -101,6 +102,7 @@ function ReadingsTable({ flashes }: { flashes: (FlashWithReadings & { color: str
       t: r.t_one_tenth_seconds,
       ct: r.color_temp_k,
       notes: r.notes,
+      ws: effectiveWs(r.stops_below_full, f.rated_ws),
     }))
   );
   if (rows.length === 0) return null;
@@ -111,6 +113,7 @@ function ReadingsTable({ flashes }: { flashes: (FlashWithReadings & { color: str
           <tr>
             <th className="px-3 py-2 text-left font-medium">Flash</th>
             <th className="px-3 py-2 text-right font-medium">Power</th>
+            {anyRated ? <th className="px-3 py-2 text-right font-medium">Output</th> : null}
             <th className="px-3 py-2 text-right font-medium">t.1</th>
             <th className="px-3 py-2 text-right font-medium">Color temp</th>
             <th className="px-3 py-2 text-left font-medium">Notes</th>
@@ -126,6 +129,9 @@ function ReadingsTable({ flashes }: { flashes: (FlashWithReadings & { color: str
               <td className="px-3 py-2 text-right font-mono">
                 {stopsToFraction(r.stops)} <span className="text-muted-foreground">({stopsToLabel(r.stops)})</span>
               </td>
+              {anyRated ? (
+                <td className="px-3 py-2 text-right font-mono">{formatWs(r.ws)}</td>
+              ) : null}
               <td className="px-3 py-2 text-right font-mono">
                 {secondsToOneOverX(r.t)} <span className="text-muted-foreground">/ {secondsToPrecise(r.t)}</span>
               </td>

@@ -54,6 +54,9 @@ export function FlashPicker({
                     {f.mode}
                   </span>
                 ) : null}
+                {f.rated_ws != null ? (
+                  <span className="ml-1 text-xs font-mono text-muted-foreground">· {f.rated_ws} Ws</span>
+                ) : null}
                 <span className="ml-1 text-xs text-muted-foreground">· {f.readings.length} pts</span>
               </span>
             </label>

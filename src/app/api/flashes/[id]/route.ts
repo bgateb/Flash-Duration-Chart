@@ -27,6 +27,7 @@ const PatchBody = z.object({
   slug: z.string().trim().max(220).optional(),
   mode: z.string().trim().max(80).nullable().optional(),
   firmware: z.string().trim().max(100).nullable().optional(),
+  rated_ws: z.number().int().min(0).max(65535).nullable().optional(),
   tested_on: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   notes: z.string().nullable().optional(),
 });
@@ -50,6 +51,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       slug,
       mode: body.mode ?? null,
       firmware: body.firmware ?? null,
+      rated_ws: body.rated_ws ?? null,
       tested_on: body.tested_on ?? null,
       notes: body.notes ?? null,
     });

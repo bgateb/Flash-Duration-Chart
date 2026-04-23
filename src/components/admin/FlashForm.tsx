@@ -15,6 +15,7 @@ export function FlashForm({ initial }: { initial?: Flash }) {
     slug: initial?.slug ?? "",
     mode: initial?.mode ?? "",
     firmware: initial?.firmware ?? "",
+    rated_ws: initial?.rated_ws != null ? String(initial.rated_ws) : "",
     tested_on: initial?.tested_on ?? "",
     notes: initial?.notes ?? "",
   });
@@ -31,12 +32,18 @@ export function FlashForm({ initial }: { initial?: Flash }) {
     setSubmitting(true);
     setError(null);
     try {
+      const ratedWsRaw = form.rated_ws.trim();
+      const ratedWs = ratedWsRaw === "" ? null : Number(ratedWsRaw);
+      if (ratedWs != null && (!Number.isFinite(ratedWs) || ratedWs < 0 || ratedWs > 65535 || !Number.isInteger(ratedWs))) {
+        throw new Error("Rated power must be a whole number of watt-seconds (0–65535)");
+      }
       const payload = {
         manufacturer: form.manufacturer.trim(),
         model: form.model.trim(),
         slug: form.slug.trim() || undefined,
         mode: form.mode.trim() || null,
         firmware: form.firmware.trim() || null,
+        rated_ws: ratedWs,
         tested_on: form.tested_on.trim() || null,
         notes: form.notes.trim() || null,
       };
@@ -90,7 +97,10 @@ export function FlashForm({ initial }: { initial?: Flash }) {
         <Field label="Firmware" value={form.firmware} onChange={(v) => set("firmware", v)} />
       </div>
       <div className="grid grid-cols-2 gap-3">
+        <Field label="Rated power (Ws)" placeholder="e.g. 200" value={form.rated_ws} onChange={(v) => set("rated_ws", v)} />
         <Field label="Tested on" type="date" value={form.tested_on ?? ""} onChange={(v) => set("tested_on", v)} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Slug (optional)" placeholder="auto from make + model" value={form.slug} onChange={(v) => set("slug", v)} />
       </div>
       <div className="space-y-1.5">

@@ -31,20 +31,22 @@ export type FlashInput = {
   slug: string;
   mode?: string | null;
   firmware?: string | null;
+  rated_ws?: number | null;
   tested_on?: string | null;
   notes?: string | null;
 };
 
 export async function createFlash(input: FlashInput): Promise<number> {
   const [res] = await getPool().query<ResultSetHeader>(
-    `INSERT INTO flashes (manufacturer, model, slug, mode, firmware, tested_on, notes)
-     VALUES (:manufacturer, :model, :slug, :mode, :firmware, :tested_on, :notes)`,
+    `INSERT INTO flashes (manufacturer, model, slug, mode, firmware, rated_ws, tested_on, notes)
+     VALUES (:manufacturer, :model, :slug, :mode, :firmware, :rated_ws, :tested_on, :notes)`,
     {
       manufacturer: input.manufacturer,
       model: input.model,
       slug: input.slug,
       mode: input.mode ?? null,
       firmware: input.firmware ?? null,
+      rated_ws: input.rated_ws ?? null,
       tested_on: input.tested_on ?? null,
       notes: input.notes ?? null,
     }
@@ -60,6 +62,7 @@ export async function updateFlash(id: number, input: FlashInput): Promise<void> 
            slug         = :slug,
            mode         = :mode,
            firmware     = :firmware,
+           rated_ws     = :rated_ws,
            tested_on    = :tested_on,
            notes        = :notes
      WHERE id = :id`,
@@ -70,6 +73,7 @@ export async function updateFlash(id: number, input: FlashInput): Promise<void> 
       slug: input.slug,
       mode: input.mode ?? null,
       firmware: input.firmware ?? null,
+      rated_ws: input.rated_ws ?? null,
       tested_on: input.tested_on ?? null,
       notes: input.notes ?? null,
     }

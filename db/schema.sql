@@ -4,15 +4,16 @@
 
 CREATE TABLE IF NOT EXISTS flashes (
   id            INT AUTO_INCREMENT PRIMARY KEY,
-  manufacturer  VARCHAR(100)  NOT NULL,
-  model         VARCHAR(200)  NOT NULL,
-  slug          VARCHAR(220)  NOT NULL UNIQUE,
-  mode          VARCHAR(80)   NULL,
-  firmware      VARCHAR(100)  NULL,
-  tested_on     DATE          NULL,
-  notes         TEXT          NULL,
-  created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-  updated_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  manufacturer  VARCHAR(100)      NOT NULL,
+  model         VARCHAR(200)      NOT NULL,
+  slug          VARCHAR(220)      NOT NULL UNIQUE,
+  mode          VARCHAR(80)       NULL,
+  firmware      VARCHAR(100)      NULL,
+  rated_ws      SMALLINT UNSIGNED NULL,
+  tested_on     DATE              NULL,
+  notes         TEXT              NULL,
+  created_at    TIMESTAMP         DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP         DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS readings (

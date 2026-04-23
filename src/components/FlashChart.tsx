@@ -12,7 +12,7 @@ import {
   Legend,
 } from "recharts";
 import type { FlashWithReadings } from "@/lib/types";
-import { stopsToFraction, stopsToLabel } from "@/lib/power";
+import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 import type { PowerAxis, DurationAxis } from "./FlashChartView";
 
@@ -41,6 +41,7 @@ export function FlashChart({
           ct: r.color_temp_k,
           notes: r.notes,
           flashName: `${f.manufacturer} ${f.model}`,
+          ws: effectiveWs(r.stops_below_full, f.rated_ws),
         }))
         .sort((a, b) => a.power - b.power),
     }));
@@ -204,6 +205,7 @@ function CustomTooltip({
           <div key={i} className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
             <span className="flex-1 truncate">{d.flashName}</span>
+            {d.ws != null ? <span className="font-mono text-muted-foreground">{formatWs(d.ws)}</span> : null}
             <span className="font-mono">
               {durationAxis === "one-over-x" ? secondsToOneOverX(d.t) : secondsToPrecise(d.t)}
             </span>

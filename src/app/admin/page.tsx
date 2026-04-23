@@ -39,6 +39,7 @@ export default async function AdminHome() {
                 <th className="px-4 py-2.5 text-left font-medium">Manufacturer</th>
                 <th className="px-4 py-2.5 text-left font-medium">Model</th>
                 <th className="px-4 py-2.5 text-left font-medium">Mode</th>
+                <th className="px-4 py-2.5 text-right font-medium">Rated</th>
                 <th className="px-4 py-2.5 text-right font-medium">Readings</th>
                 <th className="px-4 py-2.5 text-left font-medium">Tested</th>
                 <th className="px-4 py-2.5" />
@@ -50,6 +51,7 @@ export default async function AdminHome() {
                   <td className="px-4 py-2.5">{f.manufacturer}</td>
                   <td className="px-4 py-2.5 font-medium">{f.model}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{f.mode ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-right font-mono">{f.rated_ws != null ? `${f.rated_ws} Ws` : "—"}</td>
                   <td className="px-4 py-2.5 text-right font-mono">{f.readings.length}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{f.tested_on ?? "—"}</td>
                   <td className="px-4 py-2.5 text-right">

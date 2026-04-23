@@ -25,6 +25,22 @@ export function stopsToExactInput(stops: number): string {
   return String(stops);
 }
 
+// Effective output in watt-seconds for a given power setting on a flash with
+// known rated output. effective = rated × 2^stops (e.g. 200 Ws @ -3 stops = 25 Ws).
+// Rounds reasonably for display: integer Ws when ≥ 1, two decimals when < 1.
+export function effectiveWs(stops: number, ratedWs: number | null | undefined): number | null {
+  if (ratedWs == null || !(ratedWs > 0)) return null;
+  return ratedWs * Math.pow(2, stops);
+}
+
+export function formatWs(ws: number | null | undefined): string {
+  if (ws == null || !(ws >= 0)) return "—";
+  if (ws >= 100) return `${Math.round(ws)} Ws`;
+  if (ws >= 10) return `${ws.toFixed(1)} Ws`;
+  if (ws >= 1) return `${ws.toFixed(2)} Ws`;
+  return `${ws.toFixed(3)} Ws`;
+}
+
 export function stopsToLabel(stops: number): string {
   if (stops === 0) return "0";
   if (stops > 0) return `+${stops}`;

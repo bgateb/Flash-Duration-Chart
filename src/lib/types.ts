@@ -5,6 +5,7 @@ export type Flash = {
   slug: string;
   mode: string | null;
   firmware: string | null;
+  rated_ws: number | null;
   tested_on: string | null;
   notes: string | null;
   created_at: string;
