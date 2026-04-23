@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import type { Reading } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { parsePowerInput, stopsToFraction } from "@/lib/power";
-import { parseDurationInput, secondsToOneOverX } from "@/lib/duration";
+import { parsePowerInput, stopsToExactInput } from "@/lib/power";
+import { parseDurationInput, secondsToExactInput } from "@/lib/duration";
 
 type Draft = {
   id: number | null;
@@ -24,8 +24,8 @@ type Draft = {
 function draftFromReading(r: Reading): Draft {
   return {
     id: r.id,
-    powerInput: stopsToFraction(r.stops_below_full),
-    durationInput: secondsToOneOverX(r.t_one_tenth_seconds).replace(/s$/, ""),
+    powerInput: stopsToExactInput(r.stops_below_full),
+    durationInput: secondsToExactInput(r.t_one_tenth_seconds),
     colorTempInput: r.color_temp_k != null ? String(r.color_temp_k) : "",
     notesInput: r.notes ?? "",
     savedStops: r.stops_below_full,
@@ -142,8 +142,8 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
           ...prev,
           {
             id: body.id,
-            powerInput: stopsToFraction(stops),
-            durationInput: secondsToOneOverX(seconds).replace(/s$/, ""),
+            powerInput: newRow.powerInput,
+            durationInput: newRow.durationInput,
             colorTempInput: ct != null ? String(ct) : "",
             notesInput: newRow.notesInput.trim(),
             savedStops: stops,

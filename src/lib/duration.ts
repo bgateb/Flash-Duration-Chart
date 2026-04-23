@@ -11,6 +11,19 @@ export function secondsToOneOverX(seconds: number): string {
   return `${seconds.toFixed(3)}s`;
 }
 
+// Non-rounding formatter for edit inputs: preserves exact value. Renders as
+// "1/N" when the inverse is an integer (within float precision of the stored
+// DECIMAL(10,7)), otherwise as the exact seconds.
+export function secondsToExactInput(seconds: number): string {
+  if (!(seconds > 0)) return "";
+  const inv = 1 / seconds;
+  const rounded = Math.round(inv);
+  if (rounded > 0 && Math.abs(inv - rounded) / rounded < 1e-6) {
+    return `1/${rounded}`;
+  }
+  return String(seconds);
+}
+
 export function secondsToPrecise(seconds: number): string {
   if (!(seconds > 0)) return "—";
   if (seconds >= 0.01) return `${seconds.toFixed(5)}s`;

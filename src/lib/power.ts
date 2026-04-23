@@ -12,6 +12,19 @@ export function stopsToFraction(stops: number): string {
   return `1/${denom.toFixed(2).replace(/\.?0+$/, "")}`;
 }
 
+// Non-rounding formatter for edit inputs: renders "1/N" only when stops is
+// an exact whole number (integer power-of-2 denominator). For fractional
+// stops (e.g. -0.33 = 1/3 stop down) render the stops value directly so the
+// user can see and edit the exact value without lossy rounding.
+export function stopsToExactInput(stops: number): string {
+  if (stops === 0) return "1/1";
+  if (Number.isInteger(stops)) {
+    const denom = Math.pow(2, -stops);
+    return `1/${denom}`;
+  }
+  return String(stops);
+}
+
 export function stopsToLabel(stops: number): string {
   if (stops === 0) return "0";
   if (stops > 0) return `+${stops}`;
