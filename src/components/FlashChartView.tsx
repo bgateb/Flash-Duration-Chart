@@ -5,6 +5,8 @@ import type { FlashWithReadings, Reading } from "@/lib/types";
 import { colorForIndex } from "@/lib/colors";
 import { FlashChart } from "./FlashChart";
 import { FlashPicker } from "./FlashPicker";
+import { FlashFilters } from "./FlashFilters";
+import { applyFilters, FLASH_FILTERS, type FilterState } from "@/lib/filters";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
@@ -40,7 +42,8 @@ export type Series = {
 };
 
 export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
-  // Color + modes per flash
+  // Color + modes per flash. Colors are assigned from the full list so filters
+  // don't re-color things as items appear and disappear.
   const colored: ColoredFlash[] = useMemo(() => {
     return flashes.map((f, i) => {
       const modes = sortModes(Array.from(new Set(f.readings.map((r) => r.mode))));
@@ -48,17 +51,29 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
     });
   }, [flashes]);
 
-  // Build all (flash, mode) series with dash style by mode index.
-  const allSeries: Series[] = useMemo(() => {
+  const [filterState, setFilterState] = useState<FilterState>({});
+  const filteredColored = useMemo(
+    () => applyFilters(colored, FLASH_FILTERS, filterState),
+    [colored, filterState],
+  );
+
+  // Dash-by-mode is computed from the full list so dash patterns stay stable
+  // when filters hide/show flashes.
+  const dashByMode = useMemo(() => {
     const allModes = sortModes(
       Array.from(new Set(colored.flatMap((f) => f.modes)))
     );
-    const dashByMode: Record<string, string> = {};
+    const map: Record<string, string> = {};
     allModes.forEach((m, i) => {
-      dashByMode[m] = DASH_PATTERNS[Math.min(i, DASH_PATTERNS.length - 1)];
+      map[m] = DASH_PATTERNS[Math.min(i, DASH_PATTERNS.length - 1)];
     });
+    return map;
+  }, [colored]);
+
+  // Build all (flash, mode) series — only for flashes that pass filters.
+  const allSeries: Series[] = useMemo(() => {
     const list: Series[] = [];
-    for (const f of colored) {
+    for (const f of filteredColored) {
       for (const m of f.modes) {
         list.push({
           id: `${f.id}:${m}`,
@@ -73,7 +88,7 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
       }
     }
     return list;
-  }, [colored]);
+  }, [filteredColored, dashByMode]);
 
   // Selection keyed by series id. Default: nothing selected — user picks what
   // to display so first load isn't a wall of overlapping lines.
@@ -89,7 +104,13 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
   return (
     <div className="grid gap-6 md:grid-cols-[240px,1fr]">
       <aside className="space-y-6 md:sticky md:top-4 md:self-start">
-        <FlashPicker flashes={colored} selected={selected} onChange={setSelected} />
+        <FlashFilters
+          items={flashes}
+          filters={FLASH_FILTERS}
+          state={filterState}
+          onChange={setFilterState}
+        />
+        <FlashPicker flashes={filteredColored} selected={selected} onChange={setSelected} />
       </aside>
 
       <section className="space-y-4">
