@@ -67,19 +67,22 @@ export function ReadingsEditor({ flashId, initial }: { flashId: number; initial:
   const router = useRouter();
   const [rows, setRows] = useState<Draft[]>(() => initial.map(draftFromReading));
 
+  const initialMode = useMemo(() => {
+    const first = sortModes(Array.from(new Set(initial.map((r) => r.mode))))[0];
+    return first ?? "Normal";
+  }, [initial]);
+
+  const [activeMode, setActiveMode] = useState<string>(initialMode);
+  const [newRow, setNewRow] = useState<Draft>(() => emptyDraft(initialMode));
+
+  // Include activeMode so a freshly-added mode shows its tab even before any rows exist.
+  // When the user switches away from an empty mode, the tab naturally disappears.
   const knownModes = useMemo(() => {
     const s = new Set<string>(rows.map((r) => r.mode));
-    if (s.size === 0) s.add("Normal");
+    s.add("Normal");
+    s.add(activeMode);
     return sortModes(Array.from(s));
-  }, [rows]);
-
-  const [activeMode, setActiveMode] = useState<string>(knownModes[0] ?? "Normal");
-  const [newRow, setNewRow] = useState<Draft>(() => emptyDraft(activeMode));
-
-  // Keep activeMode in sync when modes disappear (last row of a mode deleted).
-  if (!knownModes.includes(activeMode) && knownModes.length > 0) {
-    setTimeout(() => setActiveMode(knownModes[0]), 0);
-  }
+  }, [rows, activeMode]);
 
   function updateRow(idx: number, patch: Partial<Draft>) {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch, dirty: true } : r)));
