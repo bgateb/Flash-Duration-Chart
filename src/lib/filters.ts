@@ -1,5 +1,5 @@
 import type { FlashWithReadings } from "./types";
-import { stopsToFraction } from "./power";
+import { effectiveWs, formatWs } from "./power";
 
 // Sentinel for filter options that represent a null/absent field value.
 export const FILTER_NULL = "__null__";
@@ -174,11 +174,21 @@ export const FLASH_FILTERS: FilterDefinition<FlashWithReadings>[] = [
   {
     kind: "range",
     key: "power",
-    label: "Power",
-    // Every reading contributes its stops value. A flash passes if it has at
-    // least one reading whose power falls in the selected range.
-    valuesOf: (f) => f.readings.map((r) => r.stops_below_full),
-    format: (n) => stopsToFraction(n),
+    label: "Output",
+    // Each reading's effective Ws (rated × 2^stops). Stored internally as
+    // log2(Ws) so the slider is log-scaled — one tick = one stop — and covers
+    // the sub-Ws to multi-kilowatt-second range evenly. Flashes without a
+    // rated_ws contribute nothing and are excluded when this filter is active.
+    valuesOf: (f) => {
+      if (f.rated_ws == null || !(f.rated_ws > 0)) return [];
+      const out: number[] = [];
+      for (const r of f.readings) {
+        const ws = effectiveWs(r.stops_below_full, f.rated_ws);
+        if (ws != null && ws > 0) out.push(Math.log2(ws));
+      }
+      return out;
+    },
+    format: (n) => formatWs(Math.pow(2, n)),
     step: 1,
   },
 ];
