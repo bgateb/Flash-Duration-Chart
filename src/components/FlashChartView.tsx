@@ -13,6 +13,7 @@ import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 
 export type PowerAxis = "fraction" | "stops";
 export type DurationAxis = "one-over-x" | "seconds";
+export type CompareMode = "relative" | "absolute";
 
 // Dash pattern per mode. "Normal" is always solid; secondary modes get
 // progressively sparser dashes so the same-color variant reads as "same
@@ -95,11 +96,20 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [powerAxis, setPowerAxis] = useState<PowerAxis>("fraction");
   const [durationAxis, setDurationAxis] = useState<DurationAxis>("one-over-x");
+  const [compareMode, setCompareMode] = useState<CompareMode>("relative");
 
   const visibleSeries = useMemo(
     () => allSeries.filter((s) => selected.has(s.id)),
     [allSeries, selected]
   );
+
+  const hiddenFlashNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const s of visibleSeries) {
+      if (s.ratedWs == null || !(s.ratedWs > 0)) names.add(s.flashName);
+    }
+    return Array.from(names);
+  }, [visibleSeries]);
 
   return (
     <div className="grid gap-6 md:grid-cols-[240px,1fr]">
@@ -116,14 +126,25 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
       <section className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <AxisToggle
-            label="Power"
-            value={powerAxis}
-            onChange={(v) => setPowerAxis(v as PowerAxis)}
+            label="Compare"
+            value={compareMode}
+            onChange={(v) => setCompareMode(v as CompareMode)}
             options={[
-              { value: "fraction", label: "1 / N" },
-              { value: "stops", label: "Stops" },
+              { value: "relative", label: "Relative" },
+              { value: "absolute", label: "Absolute Ws" },
             ]}
           />
+          {compareMode === "relative" && (
+            <AxisToggle
+              label="Power"
+              value={powerAxis}
+              onChange={(v) => setPowerAxis(v as PowerAxis)}
+              options={[
+                { value: "fraction", label: "1 / N" },
+                { value: "stops", label: "Stops" },
+              ]}
+            />
+          )}
           <AxisToggle
             label="Duration"
             value={durationAxis}
@@ -136,8 +157,19 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
         </div>
 
         <div className="rounded-lg border bg-card p-2 md:p-4">
-          <FlashChart series={visibleSeries} powerAxis={powerAxis} durationAxis={durationAxis} />
+          <FlashChart
+            series={visibleSeries}
+            powerAxis={powerAxis}
+            durationAxis={durationAxis}
+            compareMode={compareMode}
+          />
         </div>
+
+        {compareMode === "absolute" && hiddenFlashNames.length > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Hidden in absolute mode (no rated Ws): {hiddenFlashNames.join(", ")}.
+          </p>
+        ) : null}
 
         <ReadingsTable series={visibleSeries} />
       </section>

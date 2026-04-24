@@ -13,17 +13,28 @@ import {
 } from "recharts";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
-import type { PowerAxis, DurationAxis, Series } from "./FlashChartView";
+import type { PowerAxis, DurationAxis, CompareMode, Series } from "./FlashChartView";
 
 export function FlashChart({
   series,
   powerAxis,
   durationAxis,
+  compareMode,
 }: {
   series: Series[];
   powerAxis: PowerAxis;
   durationAxis: DurationAxis;
+  compareMode: CompareMode;
 }) {
+  // In absolute mode, flashes without a rated Ws can't be placed on the axis.
+  const plotSeries = useMemo(
+    () =>
+      compareMode === "absolute"
+        ? series.filter((s) => s.ratedWs != null && s.ratedWs > 0)
+        : series,
+    [series, compareMode],
+  );
+
   // Build a SHARED dataset (one row per unique power level, with one t/ws/ct
   // column per (flash, mode) series). Recharts' tooltip can only correctly
   // attribute payload entries when all <Line>s share the parent <LineChart>'s
@@ -31,9 +42,16 @@ export function FlashChart({
   // for every line. Encode the series id (flashId:mode) in the dataKey.
   const { combinedData, lineConfigs } = useMemo(() => {
     const xMap = new Map<number, Record<string, any>>();
-    for (const s of series) {
+    for (const s of plotSeries) {
       for (const r of s.readings) {
-        const x = Math.pow(2, r.stops_below_full);
+        let x: number;
+        if (compareMode === "absolute") {
+          const ws = effectiveWs(r.stops_below_full, s.ratedWs);
+          if (ws == null) continue;
+          x = ws;
+        } else {
+          x = Math.pow(2, r.stops_below_full);
+        }
         if (!xMap.has(x)) xMap.set(x, { power: x, stops: r.stops_below_full });
         const row = xMap.get(x)!;
         const key = encodeKey(s.id);
@@ -45,7 +63,7 @@ export function FlashChart({
       }
     }
     const combinedData = Array.from(xMap.values()).sort((a, b) => a.power - b.power);
-    const lineConfigs = series.map((s) => ({
+    const lineConfigs = plotSeries.map((s) => ({
       id: s.id,
       key: encodeKey(s.id),
       name: s.mode === "Normal" ? s.flashName : `${s.flashName} — ${s.mode}`,
@@ -53,7 +71,7 @@ export function FlashChart({
       dashPattern: s.dashPattern,
     }));
     return { combinedData, lineConfigs };
-  }, [series]);
+  }, [plotSeries, compareMode]);
 
   const { xDomain, yDomain, xTicks, yTicks } = useMemo(() => {
     const allX: number[] = [];
@@ -66,10 +84,11 @@ export function FlashChart({
       }
     }
     if (allX.length === 0) {
+      const [xLo, xHi] = compareMode === "absolute" ? [1, 512] : [1 / 256, 1];
       return {
-        xDomain: [1 / 256, 1] as [number, number],
+        xDomain: [xLo, xHi] as [number, number],
         yDomain: [0.00001, 0.01] as [number, number],
-        xTicks: powerTicks(1 / 256, 1),
+        xTicks: powerTicks(xLo, xHi),
         yTicks: durationTicks(0.00001, 0.01),
       };
     }
@@ -87,7 +106,7 @@ export function FlashChart({
       xTicks: powerTicks(xLo, Math.max(xHi, xLo * 2)),
       yTicks: durationTicks(yLo, Math.max(yHi, yLo * 10)),
     };
-  }, [combinedData, lineConfigs]);
+  }, [combinedData, lineConfigs, compareMode]);
 
   return (
     <div className="h-[520px] w-full">
@@ -100,11 +119,18 @@ export function FlashChart({
             scale="log"
             domain={xDomain}
             ticks={xTicks}
-            tickFormatter={(v) => formatPower(v, powerAxis)}
+            tickFormatter={(v) =>
+              compareMode === "absolute" ? formatWs(v) : formatPower(v, powerAxis)
+            }
             stroke="hsl(var(--muted-foreground))"
             tick={{ fontSize: 11 }}
             label={{
-              value: powerAxis === "fraction" ? "Power (fraction of full)" : "Power (stops below full)",
+              value:
+                compareMode === "absolute"
+                  ? "Output (Ws)"
+                  : powerAxis === "fraction"
+                    ? "Power (fraction of full)"
+                    : "Power (stops below full)",
               position: "insideBottom",
               offset: -4,
               style: { fill: "hsl(var(--muted-foreground))", fontSize: 11 },
@@ -127,7 +153,15 @@ export function FlashChart({
               style: { fill: "hsl(var(--muted-foreground))", fontSize: 11 },
             }}
           />
-          <Tooltip content={<CustomTooltip powerAxis={powerAxis} durationAxis={durationAxis} />} />
+          <Tooltip
+            content={
+              <CustomTooltip
+                powerAxis={powerAxis}
+                durationAxis={durationAxis}
+                compareMode={compareMode}
+              />
+            }
+          />
           <Legend
             verticalAlign="top"
             height={36}
@@ -197,11 +231,13 @@ function CustomTooltip({
   payload,
   powerAxis,
   durationAxis,
+  compareMode,
 }: {
   active?: boolean;
   payload?: any[];
   powerAxis: PowerAxis;
   durationAxis: DurationAxis;
+  compareMode: CompareMode;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
@@ -209,10 +245,16 @@ function CustomTooltip({
   return (
     <div className="rounded-md border bg-card px-3 py-2 text-xs shadow-md">
       <div className="mb-1 font-semibold">
-        {formatPower(row.power, powerAxis)}{" "}
-        <span className="text-muted-foreground">
-          ({powerAxis === "fraction" ? stopsToLabel(row.stops) + " stops" : stopsToFraction(row.stops)})
-        </span>
+        {compareMode === "absolute" ? (
+          formatWs(row.power)
+        ) : (
+          <>
+            {formatPower(row.power, powerAxis)}{" "}
+            <span className="text-muted-foreground">
+              ({powerAxis === "fraction" ? stopsToLabel(row.stops) + " stops" : stopsToFraction(row.stops)})
+            </span>
+          </>
+        )}
       </div>
       {payload
         .filter((p) => p.value != null)
