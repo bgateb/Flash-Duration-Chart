@@ -36,13 +36,13 @@ export function FlashFilters<T>({
   return (
     <div className="rounded-lg border bg-card p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Filters{total > 0 ? <span className="ml-1 text-foreground">· {total}</span> : null}
+        <h2 className="text-sm font-semibold text-foreground">
+          Filters{total > 0 ? <span className="ml-1 text-muted-foreground">· {total}</span> : null}
         </h2>
         {total > 0 ? (
           <button
             onClick={() => onChange(clearAllFilters())}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
+            className="text-xs text-muted-foreground hover:text-foreground"
           >
             clear
           </button>
@@ -97,13 +97,13 @@ function MultiSelectSection<T>({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-medium text-muted-foreground">
           {def.label}
         </h3>
         {selected.length > 0 ? (
           <button
             onClick={onClear}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
+            className="text-xs text-muted-foreground hover:text-foreground"
           >
             clear
           </button>
@@ -156,19 +156,19 @@ function RangeSection<T>({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-medium text-muted-foreground">
           {def.label}
         </h3>
         {!isDefault ? (
           <button
             onClick={() => onChange(null)}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
+            className="text-xs text-muted-foreground hover:text-foreground"
           >
             clear
           </button>
         ) : null}
       </div>
-      <div className="mb-1.5 text-xs font-mono">
+      <div className="mb-1.5 text-xs">
         {fmt(min)}
         <span className="mx-1 text-muted-foreground">→</span>
         {fmt(max)}
@@ -201,7 +201,7 @@ function RangeSection<T>({
           aria-label={`${def.label} maximum`}
         />
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
         <span>{fmt(bounds.min)}</span>
         <span>{fmt(bounds.max)}</span>
       </div>

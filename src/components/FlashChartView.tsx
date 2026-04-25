@@ -428,7 +428,7 @@ function AxisToggle({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <ToggleGroup
         type="single"
         value={value}

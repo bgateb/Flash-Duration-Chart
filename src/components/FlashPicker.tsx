@@ -67,8 +67,8 @@ export function FlashPicker({
   return (
     <div className="rounded-lg border bg-card p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Flashes</h2>
-        <div className="flex gap-1 text-[11px]">
+        <h2 className="text-sm font-semibold text-foreground">Flashes</h2>
+        <div className="flex gap-1 text-xs">
           <button onClick={allOn} className="text-muted-foreground hover:text-foreground">
             all
           </button>
@@ -111,11 +111,11 @@ export function FlashPicker({
                   >
                     {groupSomeOn ? "▪" : ""}
                   </span>
-                  <span className="text-[11px] font-semibold tracking-wide text-foreground">
+                  <span className="text-xs font-semibold text-foreground">
                     {manufacturer}
                   </span>
                 </button>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                   {groupFlashes.length} {groupFlashes.length === 1 ? "unit" : "units"}
                 </span>
               </div>
