@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
+import { Info } from "lucide-react";
 import type { ColoredFlash } from "./FlashChartView";
 import { Checkbox } from "./ui/checkbox";
+import { FlashDetail } from "./FlashDetail";
 
 export function FlashPicker({
   flashes,
@@ -50,6 +53,8 @@ export function FlashPicker({
   function allOff() {
     onChange(new Set());
   }
+
+  const [detailFlash, setDetailFlash] = useState<ColoredFlash | null>(null);
 
   // Group flashes by manufacturer, sorted alphabetically
   const groups = Object.entries(
@@ -128,29 +133,38 @@ export function FlashPicker({
 
                   return (
                     <li key={f.id}>
-                      <label className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-0.5 hover:bg-accent">
-                        <Checkbox
-                          checked={flashAllOn ? true : flashSomeOn ? "indeterminate" : false}
-                          onCheckedChange={() => toggleAllForFlash(f.id, modes)}
-                          className="mt-0.5"
-                        />
-                        <span className="flex-1 text-sm leading-snug">
-                          <span
-                            className="inline-block h-2 w-2 rounded-full align-middle"
-                            style={{ background: f.color }}
+                      <div className="flex items-start gap-1">
+                        <label className="flex flex-1 cursor-pointer items-start gap-2 rounded px-1.5 py-0.5 hover:bg-accent">
+                          <Checkbox
+                            checked={flashAllOn ? true : flashSomeOn ? "indeterminate" : false}
+                            onCheckedChange={() => toggleAllForFlash(f.id, modes)}
+                            className="mt-0.5"
                           />
-                          {/* Model only — manufacturer is in the group header */}
-                          <span className="ml-2 align-middle">{f.model}</span>
-                          {f.rated_ws != null ? (
-                            <span className="ml-1 text-xs font-mono text-muted-foreground">
-                              · {f.rated_ws} Ws
+                          <span className="flex-1 text-sm leading-snug">
+                            <span
+                              className="inline-block h-2 w-2 rounded-full align-middle"
+                              style={{ background: f.color }}
+                            />
+                            {/* Model only — manufacturer is in the group header */}
+                            <span className="ml-2 align-middle">{f.model}</span>
+                            {f.rated_ws != null ? (
+                              <span className="ml-1 text-xs font-mono text-muted-foreground">
+                                · {f.rated_ws} Ws
+                              </span>
+                            ) : null}
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              · {totalReadings} pts
                             </span>
-                          ) : null}
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            · {totalReadings} pts
                           </span>
-                        </span>
-                      </label>
+                        </label>
+                        <button
+                          onClick={() => setDetailFlash(f)}
+                          aria-label={`Details for ${f.manufacturer} ${f.model}`}
+                          className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground/50 hover:bg-accent hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
 
                       {showNestedModes ? (
                         <ul className="ml-6 mt-0.5 space-y-0.5 border-l border-border/60 pl-2">
@@ -183,6 +197,8 @@ export function FlashPicker({
           );
         })}
       </div>
+
+      <FlashDetail flash={detailFlash} onClose={() => setDetailFlash(null)} />
     </div>
   );
 }

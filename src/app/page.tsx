@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listAllWithReadings } from "@/lib/queries";
 import { FlashChartView } from "@/components/FlashChartView";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ChartGuide } from "@/components/ChartGuide";
 import pkg from "../../package.json";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +58,10 @@ export default async function Home({
           No flashes yet. <Link href="/admin" className="font-medium text-foreground underline">Add your first flash</Link> to see it on the chart.
         </div>
       ) : (
-        <FlashChartView flashes={flashes} initialParams={params} />
+        <>
+          <ChartGuide />
+          <FlashChartView flashes={flashes} initialParams={params} />
+        </>
       )}
 
       <footer className="mt-12 border-t pt-4 text-center text-xs text-muted-foreground">
