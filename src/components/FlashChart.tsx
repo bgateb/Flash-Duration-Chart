@@ -6,15 +6,29 @@ import {
   Line,
   LineChart,
   ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  Legend,
 } from "recharts";
+import { Ruler, MousePointer2 } from "lucide-react";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
+import { cn } from "@/lib/cn";
 import type { PowerAxis, DurationAxis, CompareMode, Series } from "./FlashChartView";
+
+// Photographer reference lines on the Y-axis (duration). Each marks a
+// commonly-cited shutter speed so users can eyeball whether a given flash
+// duration is faster or slower than, say, the typical sync speed.
+const REFERENCE_LINES: { y: number; label: string }[] = [
+  { y: 1 / 250, label: "1/250s · sync" },
+  { y: 1 / 1000, label: "1/1000s · freeze" },
+  { y: 1 / 8000, label: "1/8000s · max electronic" },
+];
+
+// Cap the tooltip rows so a 30-flash selection doesn't render a wall of text.
+const TOOLTIP_ROW_CAP = 12;
 
 export function FlashChart({
   series,
@@ -36,6 +50,13 @@ export function FlashChart({
   const [zoomedX, setZoomedX] = useState<[number, number] | null>(null);
   const selectingRef = useRef(selecting);
   selectingRef.current = selecting;
+
+  // Hover-to-highlight: when a series is hovered (line or legend), fade others.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  // Reference lines toggle (default on). Local state — view preference, not
+  // worth round-tripping through the URL.
+  const [showRefs, setShowRefs] = useState(true);
 
   // Reset zoom whenever the axis units change — the stored values no longer apply
   useEffect(() => {
@@ -172,29 +193,75 @@ export function FlashChart({
     [activeXDomain],
   );
 
+  // Reference lines that fall inside the current Y-domain. Out-of-range lines
+  // are hidden so we don't squash the chart with labels.
+  const visibleRefs = useMemo(
+    () =>
+      showRefs
+        ? REFERENCE_LINES.filter((r) => r.y >= yDomain[0] && r.y <= yDomain[1])
+        : [],
+    [showRefs, yDomain],
+  );
+
+  const isEmpty = combinedData.length === 0;
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
   return (
     <div className="relative">
-      {/* Reset zoom button — only visible when zoomed */}
-      {zoomedX && (
+      {/* Top-right toolbar: refs toggle + reset zoom (when zoomed). */}
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
         <button
-          onClick={() => setZoomedX(null)}
-          className="absolute right-2 top-2 z-10 rounded border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground"
+          onClick={() => setShowRefs((v) => !v)}
+          aria-pressed={showRefs}
+          title={showRefs ? "Hide shutter-speed reference lines" : "Show shutter-speed reference lines"}
+          className={cn(
+            "inline-flex items-center gap-1 rounded border bg-card px-2 py-0.5 text-[11px] font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            showRefs
+              ? "border-primary/40 text-foreground"
+              : "border-border text-muted-foreground hover:text-foreground",
+          )}
         >
-          Reset zoom
+          <Ruler className="h-3 w-3" />
+          Refs
         </button>
-      )}
+        {zoomedX && (
+          <button
+            onClick={() => setZoomedX(null)}
+            className="rounded border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground"
+          >
+            Reset zoom
+          </button>
+        )}
+      </div>
 
       <div
-        className="h-[520px] w-full"
-        style={{ cursor: selecting ? "crosshair" : "default" }}
+        className={cn(
+          "relative w-full",
+          // Shorter on mobile so the picker isn't pushed below the fold
+          "h-[360px] md:h-[520px]",
+        )}
+        style={{
+          // Crosshair cursor advertises the drag-to-zoom affordance even when
+          // not actively selecting. Switches to grabbing-style during drag.
+          cursor: selecting ? "crosshair" : isEmpty ? "default" : "crosshair",
+        }}
       >
+        {/* Empty state — overlaid above the (still-rendered) axes. */}
+        {isEmpty ? (
+          <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center">
+            <div className="flex flex-col items-center gap-1 text-center text-muted-foreground">
+              <MousePointer2 className="h-5 w-5" />
+              <p className="text-sm">Pick a flash from the panel to start charting.</p>
+            </div>
+          </div>
+        ) : null}
+
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={combinedData}
-            margin={{ top: 16, right: 24, left: 8, bottom: 8 }}
+            margin={{ top: 16, right: 24, left: 8, bottom: 28 }}
             onMouseDown={onChartMouseDown}
             onMouseMove={onChartMouseMove}
             onMouseUp={onChartMouseUp}
@@ -214,12 +281,12 @@ export function FlashChart({
               label={{
                 value:
                   compareMode === "absolute"
-                    ? "Output (Ws)"
+                    ? "Output (watt-seconds)"
                     : powerAxis === "fraction"
                       ? "Power (fraction of full)"
                       : "Power (stops below full)",
                 position: "insideBottom",
-                offset: -4,
+                offset: -10,
                 style: { fill: "hsl(var(--muted-foreground))", fontSize: 11 },
               }}
             />
@@ -233,7 +300,7 @@ export function FlashChart({
               tick={{ fontSize: 11 }}
               width={80}
               label={{
-                value: "t.1 duration",
+                value: "Flash duration (t0.1)",
                 angle: -90,
                 position: "insideLeft",
                 offset: 10,
@@ -241,37 +308,72 @@ export function FlashChart({
               }}
             />
             <Tooltip
+              cursor={
+                selecting
+                  ? false
+                  : {
+                      stroke: "hsl(var(--primary))",
+                      strokeOpacity: 0.35,
+                      strokeDasharray: "2 4",
+                    }
+              }
               content={
                 selecting ? () => null : (
                   <CustomTooltip
                     powerAxis={powerAxis}
                     durationAxis={durationAxis}
                     compareMode={compareMode}
+                    hoveredId={hoveredId}
                   />
                 )
               }
             />
-            <Legend
-              verticalAlign="top"
-              height={36}
-              iconType="plainline"
-              wrapperStyle={{ fontSize: 12 }}
-            />
-            {lineConfigs.map((cfg) => (
-              <Line
-                key={cfg.id}
-                name={cfg.name}
-                dataKey={`t_${cfg.key}`}
-                type="monotone"
-                stroke={cfg.color}
-                strokeWidth={2}
-                strokeDasharray={cfg.dashPattern}
-                dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }}
-                activeDot={{ r: 5 }}
-                isAnimationActive={false}
-                connectNulls
+
+            {/* Photographer reference lines (horizontal at common shutter speeds). */}
+            {visibleRefs.map((r) => (
+              <ReferenceLine
+                key={r.y}
+                y={r.y}
+                stroke="hsl(var(--muted-foreground))"
+                strokeOpacity={0.45}
+                strokeDasharray="4 4"
+                ifOverflow="hidden"
+                label={{
+                  value: r.label,
+                  position: "insideTopRight",
+                  fill: "hsl(var(--muted-foreground))",
+                  fontSize: 10,
+                }}
               />
             ))}
+
+            {lineConfigs.map((cfg) => {
+              const isHovered = hoveredId === cfg.id;
+              const dimmed = hoveredId != null && !isHovered;
+              return (
+                <Line
+                  key={cfg.id}
+                  name={cfg.name}
+                  dataKey={`t_${cfg.key}`}
+                  type="monotone"
+                  stroke={cfg.color}
+                  strokeWidth={isHovered ? 3 : 2}
+                  strokeDasharray={cfg.dashPattern}
+                  strokeOpacity={dimmed ? 0.18 : 1}
+                  dot={{
+                    r: isHovered ? 4 : 3,
+                    fill: cfg.color,
+                    strokeWidth: 0,
+                    opacity: dimmed ? 0.18 : 1,
+                  }}
+                  activeDot={{ r: 5 }}
+                  isAnimationActive={false}
+                  connectNulls
+                  onMouseEnter={() => setHoveredId(cfg.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                />
+              );
+            })}
 
             {/* Zoom selection highlight */}
             {selecting && refLeft != null && refRight != null && (
@@ -288,12 +390,14 @@ export function FlashChart({
         </ResponsiveContainer>
       </div>
 
-      {/* Zoom hint — only shown when nothing is zoomed */}
-      {!zoomedX && combinedData.length > 0 && (
-        <p className="mt-1 text-center text-[10px] text-muted-foreground/60 select-none">
-          Drag to zoom
-        </p>
-      )}
+      {/* Custom legend — supports hover-to-highlight by sharing hoveredId state. */}
+      {lineConfigs.length > 0 ? (
+        <CustomLegend
+          configs={lineConfigs}
+          hoveredId={hoveredId}
+          onHover={setHoveredId}
+        />
+      ) : null}
     </div>
   );
 }
@@ -337,22 +441,105 @@ function durationTicks(lo: number, hi: number): number[] {
   return ticks;
 }
 
+function CustomLegend({
+  configs,
+  hoveredId,
+  onHover,
+}: {
+  configs: { id: string; key: string; name: string; color: string; dashPattern: string }[];
+  hoveredId: string | null;
+  onHover: (id: string | null) => void;
+}) {
+  return (
+    <ul className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-2 text-xs">
+      {configs.map((cfg) => {
+        const dimmed = hoveredId != null && hoveredId !== cfg.id;
+        return (
+          <li
+            key={cfg.id}
+            onMouseEnter={() => onHover(cfg.id)}
+            onMouseLeave={() => onHover(null)}
+            className={cn(
+              "inline-flex cursor-default items-center gap-1.5 rounded px-1 py-0.5 transition-opacity",
+              dimmed ? "opacity-40" : "opacity-100",
+            )}
+          >
+            {/* Mini line swatch — solid block for solid lines, dashed inline for dashed */}
+            <span
+              aria-hidden="true"
+              className="inline-block h-[2px] w-5 shrink-0"
+              style={{
+                background:
+                  cfg.dashPattern === "0"
+                    ? cfg.color
+                    : `repeating-linear-gradient(to right, ${cfg.color} 0 5px, transparent 5px 9px)`,
+              }}
+            />
+            <span className="truncate">{cfg.name}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function CustomTooltip({
   active,
   payload,
   powerAxis,
   durationAxis,
   compareMode,
+  hoveredId,
 }: {
   active?: boolean;
   payload?: any[];
   powerAxis: PowerAxis;
   durationAxis: DurationAxis;
   compareMode: CompareMode;
+  hoveredId: string | null;
 }) {
   if (!active || !payload || payload.length === 0) return null;
   const row = payload[0].payload;
   if (!row) return null;
+
+  // Build entries with their resolved t values, then sort.
+  type Entry = {
+    key: string;
+    color: string;
+    name: string;
+    t: number;
+    ws: number | null | undefined;
+    ct: number | null | undefined;
+  };
+  const entries: Entry[] = [];
+  for (const p of payload) {
+    if (p.value == null) continue;
+    const key = String(p.dataKey).replace(/^t_/, "");
+    entries.push({
+      key,
+      color: p.color,
+      name: (row[`name_${key}`] as string | undefined) ?? p.name,
+      t: p.value as number,
+      ws: row[`ws_${key}`],
+      ct: row[`ct_${key}`],
+    });
+  }
+
+  // Sort fastest-first; pin the hovered series to the top so the user
+  // immediately sees the line they're tracing even if it's slow.
+  entries.sort((a, b) => a.t - b.t);
+  const hoveredKey = hoveredId ? encodeKey(hoveredId) : null;
+  if (hoveredKey) {
+    const idx = entries.findIndex((e) => e.key === hoveredKey);
+    if (idx > 0) {
+      const [hit] = entries.splice(idx, 1);
+      entries.unshift(hit);
+    }
+  }
+
+  const visible = entries.slice(0, TOOLTIP_ROW_CAP);
+  const hidden = entries.length - visible.length;
+
   return (
     <div className="rounded-md border bg-card px-3 py-2 text-xs shadow-md">
       <div className="mb-1 font-semibold">
@@ -367,26 +554,33 @@ function CustomTooltip({
           </>
         )}
       </div>
-      {payload
-        .filter((p) => p.value != null)
-        .map((p, i) => {
-          const key = String(p.dataKey).replace(/^t_/, "");
-          const t = p.value as number;
-          const ws = row[`ws_${key}`] as number | null | undefined;
-          const ct = row[`ct_${key}`] as number | null | undefined;
-          const name = (row[`name_${key}`] as string | undefined) ?? p.name;
-          return (
-            <div key={i} className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-              <span className="flex-1 truncate">{name}</span>
-              {ws != null ? <span className="font-mono text-muted-foreground">{formatWs(ws)}</span> : null}
-              <span className="font-mono">
-                {durationAxis === "one-over-x" ? secondsToOneOverX(t) : secondsToPrecise(t)}
-              </span>
-              {ct ? <span className="font-mono text-muted-foreground">{ct}K</span> : null}
-            </div>
-          );
-        })}
+      {visible.map((e) => {
+        const isHover = hoveredKey != null && e.key === hoveredKey;
+        return (
+          <div
+            key={e.key}
+            className={cn(
+              "flex items-center gap-2",
+              isHover ? "font-semibold text-foreground" : "",
+            )}
+          >
+            <span className="h-2 w-2 rounded-full" style={{ background: e.color }} />
+            <span className="flex-1 truncate">{e.name}</span>
+            {e.ws != null ? (
+              <span className="font-mono text-muted-foreground">{formatWs(e.ws)}</span>
+            ) : null}
+            <span className="font-mono">
+              {durationAxis === "one-over-x" ? secondsToOneOverX(e.t) : secondsToPrecise(e.t)}
+            </span>
+            {e.ct ? <span className="font-mono text-muted-foreground">{e.ct}K</span> : null}
+          </div>
+        );
+      })}
+      {hidden > 0 ? (
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          + {hidden} more series at this point
+        </div>
+      ) : null}
     </div>
   );
 }
