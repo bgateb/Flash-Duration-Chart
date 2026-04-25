@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { FlashWithReadings, Reading } from "@/lib/types";
 import { colorForIndex } from "@/lib/colors";
 import { FlashChart } from "./FlashChart";
@@ -17,7 +17,7 @@ import {
 } from "@/lib/filters";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Sheet, SheetTrigger, SheetContent } from "./ui/sheet";
-import { SlidersHorizontal, Link2, Check } from "lucide-react";
+import { SlidersHorizontal, Link2, Check, ChevronUp, ChevronDown, Download } from "lucide-react";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 
@@ -444,36 +444,128 @@ function AxisToggle({
   );
 }
 
+type SortKey = "flash" | "mode" | "power" | "output" | "t" | "ct";
+
 function ReadingsTable({ series }: { series: Series[] }) {
+  const [sortKey, setSortKey] = useState<SortKey>("power");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
+  }
+
   const anyRated = series.some((s) => s.ratedWs != null);
   const anyMultiMode =
     new Set(series.map((s) => s.mode)).size > 1 ||
     series.some((s) => s.mode !== "Normal");
-  const rows = series.flatMap((s) =>
-    s.readings.map((r) => ({
-      key: `${s.id}-${r.id}`,
-      flashName: s.flashName,
-      color: s.color,
-      mode: s.mode,
-      stops: r.stops_below_full,
-      t: r.t_one_tenth_seconds,
-      ct: r.color_temp_k,
-      notes: r.notes,
-      ws: effectiveWs(r.stops_below_full, s.ratedWs),
-    })),
-  );
+
+  const rows = useMemo(() => {
+    const raw = series.flatMap((s) =>
+      s.readings.map((r) => ({
+        key: `${s.id}-${r.id}`,
+        flashName: s.flashName,
+        color: s.color,
+        mode: s.mode,
+        stops: r.stops_below_full,
+        t: r.t_one_tenth_seconds,
+        ct: r.color_temp_k,
+        notes: r.notes,
+        ws: effectiveWs(r.stops_below_full, s.ratedWs),
+      })),
+    );
+    return raw.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "flash":  cmp = a.flashName.localeCompare(b.flashName); break;
+        case "mode":   cmp = a.mode.localeCompare(b.mode); break;
+        case "power":  cmp = a.stops - b.stops; break;
+        case "output": cmp = (a.ws ?? -Infinity) - (b.ws ?? -Infinity); break;
+        case "t":      cmp = a.t - b.t; break;
+        case "ct":     cmp = (a.ct ?? 0) - (b.ct ?? 0); break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [series, sortKey, sortDir]);
+
+  const downloadCsv = useCallback(() => {
+    const headers = [
+      "Flash",
+      ...(anyMultiMode ? ["Mode"] : []),
+      "Power",
+      "Stops",
+      ...(anyRated ? ["Output (Ws)"] : []),
+      "t.1 (1/X)",
+      "t.1 (seconds)",
+      "Color Temp (K)",
+      "Notes",
+    ];
+    const csvRows = rows.map((r) => [
+      r.flashName,
+      ...(anyMultiMode ? [r.mode] : []),
+      stopsToFraction(r.stops),
+      stopsToLabel(r.stops),
+      ...(anyRated ? [r.ws != null ? r.ws.toFixed(1) : ""] : []),
+      secondsToOneOverX(r.t),
+      secondsToPrecise(r.t),
+      r.ct ? String(r.ct) : "",
+      r.notes ?? "",
+    ]);
+    const csv = [headers, ...csvRows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "flash-duration-readings.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [rows, anyRated, anyMultiMode]);
+
   if (rows.length === 0) return null;
+
+  function SortIcon({ col }: { col: SortKey }) {
+    if (sortKey !== col) return <span className="ml-0.5 opacity-0 group-hover:opacity-30">↕</span>;
+    return sortDir === "asc"
+      ? <ChevronUp className="ml-0.5 inline h-3 w-3" />
+      : <ChevronDown className="ml-0.5 inline h-3 w-3" />;
+  }
+
+  function SortTh({ col, label, align = "left" }: { col: SortKey; label: string; align?: "left" | "right" }) {
+    return (
+      <th
+        className={`group cursor-pointer select-none px-3 py-2 font-medium hover:text-foreground text-${align}`}
+        onClick={() => handleSort(col)}
+      >
+        {label}<SortIcon col={col} />
+      </th>
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex items-center justify-between border-b px-3 py-2">
+        <span className="text-xs text-muted-foreground">
+          {rows.length} reading{rows.length === 1 ? "" : "s"}
+        </span>
+        <button
+          onClick={downloadCsv}
+          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+        >
+          <Download className="h-3.5 w-3.5" />
+          CSV
+        </button>
+      </div>
       <table className="w-full text-sm">
         <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
-            <th className="px-3 py-2 text-left font-medium">Flash</th>
-            {anyMultiMode ? <th className="px-3 py-2 text-left font-medium">Mode</th> : null}
-            <th className="px-3 py-2 text-right font-medium">Power</th>
-            {anyRated ? <th className="px-3 py-2 text-right font-medium">Output</th> : null}
-            <th className="px-3 py-2 text-right font-medium">t.1</th>
-            <th className="px-3 py-2 text-right font-medium">Color temp</th>
+            <SortTh col="flash" label="Flash" />
+            {anyMultiMode ? <SortTh col="mode" label="Mode" /> : null}
+            <SortTh col="power" label="Power" align="right" />
+            {anyRated ? <SortTh col="output" label="Output" align="right" /> : null}
+            <SortTh col="t" label="t.1" align="right" />
+            <SortTh col="ct" label="Color temp" align="right" />
             <th className="px-3 py-2 text-left font-medium">Notes</th>
           </tr>
         </thead>

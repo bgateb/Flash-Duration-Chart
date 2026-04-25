@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -26,6 +27,67 @@ export function FlashChart({
   durationAxis: DurationAxis;
   compareMode: CompareMode;
 }) {
+  // ---------------------------------------------------------------------------
+  // Zoom state
+  // ---------------------------------------------------------------------------
+  const [refLeft, setRefLeft] = useState<number | null>(null);
+  const [refRight, setRefRight] = useState<number | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [zoomedX, setZoomedX] = useState<[number, number] | null>(null);
+  const selectingRef = useRef(selecting);
+  selectingRef.current = selecting;
+
+  // Reset zoom whenever the axis units change — the stored values no longer apply
+  useEffect(() => {
+    setZoomedX(null);
+    setSelecting(false);
+    setRefLeft(null);
+    setRefRight(null);
+  }, [compareMode, powerAxis]);
+
+  // Cancel a drag if the mouse is released anywhere outside the chart
+  useEffect(() => {
+    function onWindowMouseUp() {
+      if (selectingRef.current) {
+        setSelecting(false);
+        setRefLeft(null);
+        setRefRight(null);
+      }
+    }
+    window.addEventListener("mouseup", onWindowMouseUp);
+    return () => window.removeEventListener("mouseup", onWindowMouseUp);
+  }, []);
+
+  function onChartMouseDown(e: any) {
+    if (!e || e.activeLabel == null) return;
+    setRefLeft(Number(e.activeLabel));
+    setRefRight(null);
+    setSelecting(true);
+  }
+
+  function onChartMouseMove(e: any) {
+    if (!selectingRef.current || !e || e.activeLabel == null) return;
+    setRefRight(Number(e.activeLabel));
+  }
+
+  function onChartMouseUp() {
+    if (selecting && refLeft != null && refRight != null && refLeft !== refRight) {
+      const lo = Math.min(refLeft, refRight);
+      const hi = Math.max(refLeft, refRight);
+      // Snap to the nearest power-of-2 boundary (works for both fraction and Ws axes)
+      const snapLo = Math.pow(2, Math.floor(Math.log2(lo)));
+      const snapHi = Math.pow(2, Math.ceil(Math.log2(hi)));
+      if (snapLo < snapHi) setZoomedX([snapLo, snapHi]);
+    }
+    setSelecting(false);
+    setRefLeft(null);
+    setRefRight(null);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Data
+  // ---------------------------------------------------------------------------
+
   // In absolute mode, flashes without a rated Ws can't be placed on the axis.
   const plotSeries = useMemo(
     () =>
@@ -35,11 +97,6 @@ export function FlashChart({
     [series, compareMode],
   );
 
-  // Build a SHARED dataset (one row per unique power level, with one t/ws/ct
-  // column per (flash, mode) series). Recharts' tooltip can only correctly
-  // attribute payload entries when all <Line>s share the parent <LineChart>'s
-  // data — with separate `data` props, the tooltip mis-shows the same point
-  // for every line. Encode the series id (flashId:mode) in the dataKey.
   const { combinedData, lineConfigs } = useMemo(() => {
     const xMap = new Map<number, Record<string, any>>();
     for (const s of plotSeries) {
@@ -108,89 +165,143 @@ export function FlashChart({
     };
   }, [combinedData, lineConfigs, compareMode]);
 
+  // Apply zoom — snap ticks to what's visible
+  const activeXDomain = zoomedX ?? xDomain;
+  const activeXTicks = useMemo(
+    () => powerTicks(activeXDomain[0], activeXDomain[1]),
+    [activeXDomain],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
-    <div className="h-[520px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={combinedData} margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis
-            dataKey="power"
-            type="number"
-            scale="log"
-            domain={xDomain}
-            ticks={xTicks}
-            tickFormatter={(v) =>
-              compareMode === "absolute" ? formatWs(v) : formatPower(v, powerAxis)
-            }
-            stroke="hsl(var(--muted-foreground))"
-            tick={{ fontSize: 11 }}
-            label={{
-              value:
-                compareMode === "absolute"
-                  ? "Output (Ws)"
-                  : powerAxis === "fraction"
-                    ? "Power (fraction of full)"
-                    : "Power (stops below full)",
-              position: "insideBottom",
-              offset: -4,
-              style: { fill: "hsl(var(--muted-foreground))", fontSize: 11 },
-            }}
-          />
-          <YAxis
-            type="number"
-            scale="log"
-            domain={yDomain}
-            ticks={yTicks}
-            tickFormatter={(v) => formatDuration(v, durationAxis)}
-            stroke="hsl(var(--muted-foreground))"
-            tick={{ fontSize: 11 }}
-            width={80}
-            label={{
-              value: "t.1 duration",
-              angle: -90,
-              position: "insideLeft",
-              offset: 10,
-              style: { fill: "hsl(var(--muted-foreground))", fontSize: 11 },
-            }}
-          />
-          <Tooltip
-            content={
-              <CustomTooltip
-                powerAxis={powerAxis}
-                durationAxis={durationAxis}
-                compareMode={compareMode}
-              />
-            }
-          />
-          <Legend
-            verticalAlign="top"
-            height={36}
-            iconType="plainline"
-            wrapperStyle={{ fontSize: 12 }}
-          />
-          {lineConfigs.map((cfg) => (
-            <Line
-              key={cfg.id}
-              name={cfg.name}
-              dataKey={`t_${cfg.key}`}
-              type="monotone"
-              stroke={cfg.color}
-              strokeWidth={2}
-              strokeDasharray={cfg.dashPattern}
-              dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }}
-              activeDot={{ r: 5 }}
-              isAnimationActive={false}
-              connectNulls
+    <div className="relative">
+      {/* Reset zoom button — only visible when zoomed */}
+      {zoomedX && (
+        <button
+          onClick={() => setZoomedX(null)}
+          className="absolute right-2 top-2 z-10 rounded border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground"
+        >
+          Reset zoom
+        </button>
+      )}
+
+      <div
+        className="h-[520px] w-full"
+        style={{ cursor: selecting ? "crosshair" : "default" }}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={combinedData}
+            margin={{ top: 16, right: 24, left: 8, bottom: 8 }}
+            onMouseDown={onChartMouseDown}
+            onMouseMove={onChartMouseMove}
+            onMouseUp={onChartMouseUp}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis
+              dataKey="power"
+              type="number"
+              scale="log"
+              domain={activeXDomain}
+              ticks={activeXTicks}
+              tickFormatter={(v) =>
+                compareMode === "absolute" ? formatWs(v) : formatPower(v, powerAxis)
+              }
+              stroke="hsl(var(--muted-foreground))"
+              tick={{ fontSize: 11 }}
+              label={{
+                value:
+                  compareMode === "absolute"
+                    ? "Output (Ws)"
+                    : powerAxis === "fraction"
+                      ? "Power (fraction of full)"
+                      : "Power (stops below full)",
+                position: "insideBottom",
+                offset: -4,
+                style: { fill: "hsl(var(--muted-foreground))", fontSize: 11 },
+              }}
             />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
+            <YAxis
+              type="number"
+              scale="log"
+              domain={yDomain}
+              ticks={yTicks}
+              tickFormatter={(v) => formatDuration(v, durationAxis)}
+              stroke="hsl(var(--muted-foreground))"
+              tick={{ fontSize: 11 }}
+              width={80}
+              label={{
+                value: "t.1 duration",
+                angle: -90,
+                position: "insideLeft",
+                offset: 10,
+                style: { fill: "hsl(var(--muted-foreground))", fontSize: 11 },
+              }}
+            />
+            <Tooltip
+              content={
+                selecting ? () => null : (
+                  <CustomTooltip
+                    powerAxis={powerAxis}
+                    durationAxis={durationAxis}
+                    compareMode={compareMode}
+                  />
+                )
+              }
+            />
+            <Legend
+              verticalAlign="top"
+              height={36}
+              iconType="plainline"
+              wrapperStyle={{ fontSize: 12 }}
+            />
+            {lineConfigs.map((cfg) => (
+              <Line
+                key={cfg.id}
+                name={cfg.name}
+                dataKey={`t_${cfg.key}`}
+                type="monotone"
+                stroke={cfg.color}
+                strokeWidth={2}
+                strokeDasharray={cfg.dashPattern}
+                dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }}
+                activeDot={{ r: 5 }}
+                isAnimationActive={false}
+                connectNulls
+              />
+            ))}
+
+            {/* Zoom selection highlight */}
+            {selecting && refLeft != null && refRight != null && (
+              <ReferenceArea
+                x1={Math.min(refLeft, refRight)}
+                x2={Math.max(refLeft, refRight)}
+                fill="hsl(var(--primary))"
+                fillOpacity={0.1}
+                stroke="hsl(var(--primary))"
+                strokeOpacity={0.4}
+              />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Zoom hint — only shown when nothing is zoomed */}
+      {!zoomedX && combinedData.length > 0 && (
+        <p className="mt-1 text-center text-[10px] text-muted-foreground/60 select-none">
+          Drag to zoom
+        </p>
+      )}
     </div>
   );
 }
 
-// Replace characters in a series id (e.g. `5:Freeze Mode`) that would be
-// unsafe in a Recharts dataKey.
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function encodeKey(id: string): string {
   return id.replace(/[^a-zA-Z0-9]/g, "_");
 }
