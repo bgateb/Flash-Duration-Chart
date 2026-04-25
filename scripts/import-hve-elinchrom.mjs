@@ -59,11 +59,12 @@ function slugify(input) {
 // ---------------------------------------------------------------------------
 // Source data from Hans van Eijsden's chart.
 //
-// Power values are POSITIVE stops-below-full (0.1 = 1/10 stop below full).
+// Power values are Elinchrom's native scale: HIGHER = more power.
+// (e.g. ELB 500 TTL: 0.1 = minimum power, 6.3 = full power)
 // Duration values are reciprocals: 1666 means t.1 = 1/1666 s.
 //
-// We convert to our schema:
-//   stops_below_full  = -power      (negative)
+// We convert to our schema per flash+mode group:
+//   stops_below_full  = hans_stop - max_hans_stop  (0 at full power, negative below)
 //   t_one_tenth_seconds = 1 / duration_reciprocal
 // ---------------------------------------------------------------------------
 
@@ -277,8 +278,11 @@ async function run() {
 
       // Insert readings
       for (const { mode, data } of entries) {
-        for (const [powerStops, durationReciprocal] of data) {
-          const stopsBelowFull = (-powerStops).toFixed(2);
+        // max power step for this mode = last entry (data is ordered low→high power)
+      const maxHansStop = data[data.length - 1][0];
+
+      for (const [powerStops, durationReciprocal] of data) {
+          const stopsBelowFull = (powerStops - maxHansStop).toFixed(2);
           const tOnetenth = (1 / durationReciprocal).toFixed(7);
 
           try {
