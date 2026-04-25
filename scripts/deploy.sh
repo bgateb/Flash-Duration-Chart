@@ -44,6 +44,11 @@ echo "→ git fetch && reset to origin/$REMOTE_BRANCH"
 git fetch --prune origin </dev/null
 git reset --hard "origin/$REMOTE_BRANCH" </dev/null
 
+if [[ ! -f .htaccess ]]; then
+  echo "→ .htaccess missing — restoring from vps/htaccess.example"
+  cp vps/htaccess.example .htaccess
+fi
+
 echo "→ npm ci (production + dev for build)"
 npm ci --no-audit --no-fund </dev/null
 

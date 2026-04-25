@@ -23,6 +23,7 @@ export default async function Home() {
             Measured <span className="font-medium text-foreground">t0.1</span> flash duration across power settings for
             every flash unit I&rsquo;ve tested (and some readings I've collected from around the web.)<br /><br />Toggle flashes on and off, 
             switch the X-axis between fractional power and stops below full, and hover any point for the precise reading.<br /><br />
+            The "Absolute Ws" toggle allows you to compare flashes with different max power ratings against each other at (roughly) the same power output.<br /><br />
             For more information about the methodology, please read the <a href="https://www.bgateb.com/blog/2017/04/14/2017-4-13-flash-duration-analysis-with-the-sekonic-l858d-u">original blog post.</a>
           </p>
         </div>
