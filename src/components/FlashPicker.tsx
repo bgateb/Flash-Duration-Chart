@@ -9,7 +9,7 @@ export function FlashPicker({
   onChange,
 }: {
   flashes: ColoredFlash[];
-  selected: Set<string>; // keys: `${flashId}:${mode}`
+  selected: Set<string>;
   onChange: (next: Set<string>) => void;
 }) {
   function seriesKey(flashId: number, mode: string) {
@@ -28,11 +28,17 @@ export function FlashPicker({
     const keys = modes.map((m) => seriesKey(flashId, m));
     const allOn = keys.every((k) => selected.has(k));
     const next = new Set(selected);
-    if (allOn) {
-      keys.forEach((k) => next.delete(k));
-    } else {
-      keys.forEach((k) => next.add(k));
-    }
+    if (allOn) keys.forEach((k) => next.delete(k));
+    else keys.forEach((k) => next.add(k));
+    onChange(next);
+  }
+
+  function toggleAllForGroup(groupFlashes: ColoredFlash[]) {
+    const keys = groupFlashes.flatMap((f) => f.modes.map((m) => seriesKey(f.id, m)));
+    const allOn = keys.length > 0 && keys.every((k) => selected.has(k));
+    const next = new Set(selected);
+    if (allOn) keys.forEach((k) => next.delete(k));
+    else keys.forEach((k) => next.add(k));
     onChange(next);
   }
 
@@ -44,6 +50,14 @@ export function FlashPicker({
   function allOff() {
     onChange(new Set());
   }
+
+  // Group flashes by manufacturer, sorted alphabetically
+  const groups = Object.entries(
+    flashes.reduce<Record<string, ColoredFlash[]>>((acc, f) => {
+      (acc[f.manufacturer] ??= []).push(f);
+      return acc;
+    }, {}),
+  ).sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -59,60 +73,116 @@ export function FlashPicker({
           </button>
         </div>
       </div>
-      <ul className="space-y-2">
-        {flashes.map((f) => {
-          const modes = f.modes;
-          const flashKeys = modes.map((m) => seriesKey(f.id, m));
-          const flashAllOn = modes.length > 0 && flashKeys.every((k) => selected.has(k));
-          const flashSomeOn = flashKeys.some((k) => selected.has(k));
-          const totalReadings = f.readings.length;
-          const showNestedModes = modes.length > 1 || (modes.length === 1 && modes[0] !== "Normal");
+
+      <div className="space-y-3">
+        {groups.map(([manufacturer, groupFlashes], gi) => {
+          const groupKeys = groupFlashes.flatMap((f) =>
+            f.modes.map((m) => seriesKey(f.id, m)),
+          );
+          const groupAllOn = groupKeys.length > 0 && groupKeys.every((k) => selected.has(k));
+          const groupSomeOn = groupKeys.some((k) => selected.has(k));
+
           return (
-            <li key={f.id}>
-              <label className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 hover:bg-accent">
-                <Checkbox
-                  checked={flashAllOn ? true : flashSomeOn ? "indeterminate" : false}
-                  onCheckedChange={() => toggleAllForFlash(f.id, modes)}
-                  className="mt-0.5"
-                />
-                <span className="flex-1 text-sm leading-snug">
-                  <span className="inline-block h-2 w-2 rounded-full align-middle" style={{ background: f.color }} />
-                  <span className="ml-2 align-middle">
-                    <span className="text-muted-foreground">{f.manufacturer}</span> {f.model}
+            <div key={manufacturer}>
+              {/* Manufacturer group header */}
+              {gi > 0 && <div className="mb-2 border-t border-border/40" />}
+              <div className="mb-1 flex items-center justify-between">
+                <button
+                  onClick={() => toggleAllForGroup(groupFlashes)}
+                  className="flex items-center gap-1.5 text-left"
+                  title={groupAllOn ? `Deselect all ${manufacturer}` : `Select all ${manufacturer}`}
+                >
+                  {/* Indeterminate-style indicator for the group */}
+                  <span
+                    className={[
+                      "inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-sm border text-[8px] font-bold leading-none transition-colors",
+                      groupAllOn
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : groupSomeOn
+                          ? "border-primary bg-primary/20 text-primary"
+                          : "border-border bg-transparent text-transparent",
+                    ].join(" ")}
+                    aria-hidden="true"
+                  >
+                    {groupSomeOn ? "▪" : ""}
                   </span>
-                  {f.rated_ws != null ? (
-                    <span className="ml-1 text-xs font-mono text-muted-foreground">· {f.rated_ws} Ws</span>
-                  ) : null}
-                  <span className="ml-1 text-xs text-muted-foreground">· {totalReadings} pts</span>
+                  <span className="text-[11px] font-semibold tracking-wide text-foreground">
+                    {manufacturer}
+                  </span>
+                </button>
+                <span className="text-[10px] text-muted-foreground">
+                  {groupFlashes.length} {groupFlashes.length === 1 ? "unit" : "units"}
                 </span>
-              </label>
-              {showNestedModes ? (
-                <ul className="ml-6 mt-0.5 space-y-0.5 border-l border-border/60 pl-2">
-                  {modes.map((m) => {
-                    const k = seriesKey(f.id, m);
-                    const pts = f.readings.filter((r) => r.mode === m).length;
-                    return (
-                      <li key={m}>
-                        <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-0.5 hover:bg-accent">
-                          <Checkbox
-                            checked={selected.has(k)}
-                            onCheckedChange={() => toggleSeries(f.id, m)}
-                            className="h-3.5 w-3.5"
+              </div>
+
+              {/* Flashes within group */}
+              <ul className="space-y-1">
+                {groupFlashes.map((f) => {
+                  const modes = f.modes;
+                  const flashKeys = modes.map((m) => seriesKey(f.id, m));
+                  const flashAllOn = modes.length > 0 && flashKeys.every((k) => selected.has(k));
+                  const flashSomeOn = flashKeys.some((k) => selected.has(k));
+                  const totalReadings = f.readings.length;
+                  const showNestedModes =
+                    modes.length > 1 || (modes.length === 1 && modes[0] !== "Normal");
+
+                  return (
+                    <li key={f.id}>
+                      <label className="flex cursor-pointer items-start gap-2 rounded px-1.5 py-0.5 hover:bg-accent">
+                        <Checkbox
+                          checked={flashAllOn ? true : flashSomeOn ? "indeterminate" : false}
+                          onCheckedChange={() => toggleAllForFlash(f.id, modes)}
+                          className="mt-0.5"
+                        />
+                        <span className="flex-1 text-sm leading-snug">
+                          <span
+                            className="inline-block h-2 w-2 rounded-full align-middle"
+                            style={{ background: f.color }}
                           />
-                          <span className="flex-1 text-xs">
-                            {m}
-                            <span className="ml-1 text-muted-foreground">· {pts} pts</span>
+                          {/* Model only — manufacturer is in the group header */}
+                          <span className="ml-2 align-middle">{f.model}</span>
+                          {f.rated_ws != null ? (
+                            <span className="ml-1 text-xs font-mono text-muted-foreground">
+                              · {f.rated_ws} Ws
+                            </span>
+                          ) : null}
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            · {totalReadings} pts
                           </span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </li>
+                        </span>
+                      </label>
+
+                      {showNestedModes ? (
+                        <ul className="ml-6 mt-0.5 space-y-0.5 border-l border-border/60 pl-2">
+                          {modes.map((m) => {
+                            const k = seriesKey(f.id, m);
+                            const pts = f.readings.filter((r) => r.mode === m).length;
+                            return (
+                              <li key={m}>
+                                <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-0.5 hover:bg-accent">
+                                  <Checkbox
+                                    checked={selected.has(k)}
+                                    onCheckedChange={() => toggleSeries(f.id, m)}
+                                    className="h-3.5 w-3.5"
+                                  />
+                                  <span className="flex-1 text-xs">
+                                    {m}
+                                    <span className="ml-1 text-muted-foreground">· {pts} pts</span>
+                                  </span>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           );
         })}
-      </ul>
+      </div>
     </div>
   );
 }
