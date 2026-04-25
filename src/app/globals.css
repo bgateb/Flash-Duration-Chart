@@ -49,3 +49,79 @@
     font-feature-settings: "cv11", "ss01";
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Dual-thumb range slider
+ *
+ * Two overlaid native <input type="range"> elements share the same track. The
+ * input itself is non-interactive (pointer-events: none) so clicks pass
+ * through to the highlighted track underneath; only the thumb pseudo-element
+ * captures pointer events. Each browser engine needs its own pseudo-selector.
+ * ------------------------------------------------------------------------- */
+.range-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  outline: none;
+}
+
+.range-slider-thumb::-webkit-slider-runnable-track {
+  background: transparent;
+  border: none;
+  height: 1.25rem;
+}
+.range-slider-thumb::-moz-range-track {
+  background: transparent;
+  border: none;
+  height: 1.25rem;
+}
+
+.range-slider-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: hsl(var(--card));
+  border: 2px solid hsl(var(--primary));
+  cursor: grab;
+  margin-top: -0.45rem; /* center on the 4px track */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: transform 120ms ease;
+}
+.range-slider-thumb::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+.range-slider-thumb::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+.range-slider-thumb:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.range-slider-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: hsl(var(--card));
+  border: 2px solid hsl(var(--primary));
+  cursor: grab;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: transform 120ms ease;
+}
+.range-slider-thumb::-moz-range-thumb:hover {
+  transform: scale(1.1);
+}
+.range-slider-thumb::-moz-range-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+.range-slider-thumb:focus-visible::-moz-range-thumb {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}

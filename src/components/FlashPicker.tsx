@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Info } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Info, Search, X } from "lucide-react";
 import type { ColoredFlash } from "./FlashChartView";
 import { Checkbox } from "./ui/checkbox";
 import { FlashDetail } from "./FlashDetail";
@@ -45,20 +45,36 @@ export function FlashPicker({
     onChange(next);
   }
 
+  const [detailFlash, setDetailFlash] = useState<ColoredFlash | null>(null);
+  const [search, setSearch] = useState("");
+
+  // Apply search across manufacturer + model. Empty search short-circuits to
+  // the full list. A group is shown if either the manufacturer matches the
+  // query (showing all its flashes) or any individual flash matches.
+  const visibleFlashes = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return flashes;
+    return flashes.filter((f) => {
+      const hay = `${f.manufacturer} ${f.model}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [flashes, search]);
+
   function allOn() {
-    const next = new Set<string>();
-    for (const f of flashes) for (const m of f.modes) next.add(seriesKey(f.id, m));
+    // Selects every series currently visible (respects search/filters);
+    // preserves anything already selected so search-narrowed "all" doesn't
+    // discard prior picks elsewhere in the catalog.
+    const next = new Set(selected);
+    for (const f of visibleFlashes) for (const m of f.modes) next.add(seriesKey(f.id, m));
     onChange(next);
   }
   function allOff() {
     onChange(new Set());
   }
 
-  const [detailFlash, setDetailFlash] = useState<ColoredFlash | null>(null);
-
   // Group flashes by manufacturer, sorted alphabetically
   const groups = Object.entries(
-    flashes.reduce<Record<string, ColoredFlash[]>>((acc, f) => {
+    visibleFlashes.reduce<Record<string, ColoredFlash[]>>((acc, f) => {
       (acc[f.manufacturer] ??= []).push(f);
       return acc;
     }, {}),
@@ -78,6 +94,35 @@ export function FlashPicker({
           </button>
         </div>
       </div>
+
+      {/* Search */}
+      <div className="relative mb-2">
+        <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search brand or model"
+          aria-label="Search flashes"
+          className="h-7 w-full rounded-md border border-input bg-background pl-7 pr-7 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        {search ? (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            aria-label="Clear search"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        ) : null}
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-muted-foreground">
+          No flashes match &ldquo;{search}&rdquo;.
+        </p>
+      ) : null}
 
       <div className="space-y-3">
         {groups.map(([manufacturer, groupFlashes], gi) => {

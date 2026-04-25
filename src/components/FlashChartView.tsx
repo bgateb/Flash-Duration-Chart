@@ -6,10 +6,10 @@ import { colorForIndex } from "@/lib/colors";
 import { FlashChart } from "./FlashChart";
 import { FlashPicker } from "./FlashPicker";
 import { FlashFilters } from "./FlashFilters";
+import { FilterChips } from "./FilterChips";
 import {
   applyFilters,
   activeFilterCount,
-  clearAllFilters,
   selectedValues,
   selectedRange,
   FLASH_FILTERS,
@@ -276,13 +276,18 @@ export function FlashChartView({
           </Sheet>
         </div>
 
-        {/* Filter summary bar — always visible */}
+        {/* Filter summary + active-filter chips — always visible */}
         <FilterSummary
           shown={filteredColored.length}
           total={colored.length}
-          activeFilters={activeFilters}
-          onClearFilters={() => setFilterState(clearAllFilters())}
         />
+        {activeFilters > 0 ? (
+          <FilterChips
+            filters={FLASH_FILTERS}
+            state={filterState}
+            onChange={setFilterState}
+          />
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
           <AxisToggle
@@ -344,13 +349,9 @@ export function FlashChartView({
 function FilterSummary({
   shown,
   total,
-  activeFilters,
-  onClearFilters,
 }: {
   shown: number;
   total: number;
-  activeFilters: number;
-  onClearFilters: () => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -360,21 +361,6 @@ function FilterSummary({
         {" "}of{" "}
         <span className="font-medium text-foreground">{total}</span>
         {" "}flashes
-        {activeFilters > 0 && (
-          <>
-            <span className="mx-1.5">·</span>
-            <span>
-              {activeFilters} filter{activeFilters === 1 ? "" : "s"} active
-            </span>
-            <span className="mx-1.5">·</span>
-            <button
-              onClick={onClearFilters}
-              className="underline-offset-2 hover:text-foreground hover:underline"
-            >
-              clear
-            </button>
-          </>
-        )}
       </p>
       <CopyLinkButton />
     </div>

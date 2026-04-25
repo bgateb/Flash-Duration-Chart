@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import type {
   FilterDefinition,
   FilterState,
@@ -18,8 +19,15 @@ import {
   setRangeValue,
   toggleFilterValue,
 } from "@/lib/filters";
-import { Checkbox } from "./ui/checkbox";
+import { cn } from "@/lib/cn";
+import { RangeSlider } from "./ui/range-slider";
 
+/**
+ * Filter sidebar. Visually distinct from FlashPicker by intent: the picker
+ * lists individual flashes (checkbox tree); this panel narrows the catalog
+ * via toggle pills and a range slider. The pill layout is what carries the
+ * "this is a filter, not a list" cue at a glance.
+ */
 export function FlashFilters<T>({
   items,
   filters,
@@ -34,11 +42,19 @@ export function FlashFilters<T>({
   const total = activeFilterCount(state);
 
   return (
-    <div className="rounded-lg border bg-card p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">
-          Filters{total > 0 ? <span className="ml-1 text-muted-foreground">· {total}</span> : null}
-        </h2>
+    <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Refine
+          </h2>
+          {total > 0 ? (
+            <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
+              {total}
+            </span>
+          ) : null}
+        </div>
         {total > 0 ? (
           <button
             onClick={() => onChange(clearAllFilters())}
@@ -49,7 +65,7 @@ export function FlashFilters<T>({
         ) : null}
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {filters.map((def) => {
           if (def.kind === "multi-select") {
             return (
@@ -78,6 +94,32 @@ export function FlashFilters<T>({
   );
 }
 
+function SectionHeader({
+  label,
+  showClear,
+  onClear,
+}: {
+  label: string;
+  showClear: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <div className="mb-1.5 flex items-center justify-between">
+      <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </h3>
+      {showClear ? (
+        <button
+          onClick={onClear}
+          className="text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          reset
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function MultiSelectSection<T>({
   def,
   items,
@@ -96,39 +138,40 @@ function MultiSelectSection<T>({
 
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-xs font-medium text-muted-foreground">
-          {def.label}
-        </h3>
-        {selected.length > 0 ? (
-          <button
-            onClick={onClear}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            clear
-          </button>
-        ) : null}
-      </div>
-      <ul className="space-y-0.5">
+      <SectionHeader
+        label={def.label}
+        showClear={selected.length > 0}
+        onClear={onClear}
+      />
+      <div className="flex flex-wrap gap-1">
         {options.map((o) => {
           const checked = selected.includes(o.value);
           return (
-            <li key={o.value}>
-              <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-0.5 hover:bg-accent">
-                <Checkbox
-                  checked={checked}
-                  onCheckedChange={() => onToggle(o.value)}
-                  className="h-3.5 w-3.5"
-                />
-                <span className="flex-1 text-xs">
-                  {o.label}
-                  <span className="ml-1 text-muted-foreground">· {o.count}</span>
-                </span>
-              </label>
-            </li>
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onToggle(o.value)}
+              aria-pressed={checked}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                checked
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-foreground hover:border-foreground/40 hover:bg-accent",
+              )}
+            >
+              <span>{o.label}</span>
+              <span
+                className={cn(
+                  "text-[10px]",
+                  checked ? "text-primary-foreground/70" : "text-muted-foreground",
+                )}
+              >
+                {o.count}
+              </span>
+            </button>
           );
         })}
-      </ul>
+      </div>
     </div>
   );
 }
@@ -155,53 +198,25 @@ function RangeSection<T>({
 
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-xs font-medium text-muted-foreground">
-          {def.label}
-        </h3>
-        {!isDefault ? (
-          <button
-            onClick={() => onChange(null)}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            clear
-          </button>
-        ) : null}
+      <SectionHeader
+        label={def.label}
+        showClear={!isDefault}
+        onClear={() => onChange(null)}
+      />
+      <div className="mb-2 flex items-baseline justify-between text-xs">
+        <span className="font-mono text-foreground">{fmt(min)}</span>
+        <span className="text-muted-foreground">to</span>
+        <span className="font-mono text-foreground">{fmt(max)}</span>
       </div>
-      <div className="mb-1.5 text-xs">
-        {fmt(min)}
-        <span className="mx-1 text-muted-foreground">→</span>
-        {fmt(max)}
-      </div>
-      <div className="space-y-1">
-        <input
-          type="range"
-          min={bounds.min}
-          max={bounds.max}
-          step={step}
-          value={min}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            onChange({ min: Math.min(n, max), max });
-          }}
-          className="w-full accent-primary"
-          aria-label={`${def.label} minimum`}
-        />
-        <input
-          type="range"
-          min={bounds.min}
-          max={bounds.max}
-          step={step}
-          value={max}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            onChange({ min, max: Math.max(n, min) });
-          }}
-          className="w-full accent-primary"
-          aria-label={`${def.label} maximum`}
-        />
-      </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+      <RangeSlider
+        min={bounds.min}
+        max={bounds.max}
+        step={step}
+        value={{ min, max }}
+        onChange={(next) => onChange(next)}
+        ariaLabel={def.label}
+      />
+      <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground">
         <span>{fmt(bounds.min)}</span>
         <span>{fmt(bounds.max)}</span>
       </div>
