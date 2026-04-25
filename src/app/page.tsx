@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listAllWithReadings } from "@/lib/queries";
 import { FlashChartView } from "@/components/FlashChartView";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import pkg from "../../package.json";
 
 export const dynamic = "force-dynamic";
@@ -27,12 +28,15 @@ export default async function Home() {
             For more information about the methodology, please read the <a href="https://www.bgateb.com/blog/2017/04/14/2017-4-13-flash-duration-analysis-with-the-sekonic-l858d-u">original blog post.</a>
           </p>
         </div>
-        <Link
-          href="/admin"
-          className="shrink-0 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-        >
-          admin
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <ThemeToggle />
+          <Link
+            href="/admin"
+            className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            admin
+          </Link>
+        </div>
       </header>
 
       {loadError ? (

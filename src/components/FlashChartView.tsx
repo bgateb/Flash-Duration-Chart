@@ -6,8 +6,10 @@ import { colorForIndex } from "@/lib/colors";
 import { FlashChart } from "./FlashChart";
 import { FlashPicker } from "./FlashPicker";
 import { FlashFilters } from "./FlashFilters";
-import { applyFilters, FLASH_FILTERS, type FilterState } from "@/lib/filters";
+import { applyFilters, activeFilterCount, FLASH_FILTERS, type FilterState } from "@/lib/filters";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
+import { Sheet, SheetTrigger, SheetContent } from "./ui/sheet";
+import { SlidersHorizontal } from "lucide-react";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 
@@ -111,19 +113,58 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
     return Array.from(names);
   }, [visibleSeries]);
 
+  const activeFilters = activeFilterCount(filterState);
+  const selectedCount = selected.size;
+
+  const sidebarContents = (
+    <>
+      <FlashFilters
+        items={flashes}
+        filters={FLASH_FILTERS}
+        state={filterState}
+        onChange={setFilterState}
+      />
+      <FlashPicker flashes={filteredColored} selected={selected} onChange={setSelected} />
+    </>
+  );
+
   return (
     <div className="grid gap-6 md:grid-cols-[240px,1fr]">
-      <aside className="space-y-6 md:sticky md:top-4 md:self-start">
-        <FlashFilters
-          items={flashes}
-          filters={FLASH_FILTERS}
-          state={filterState}
-          onChange={setFilterState}
-        />
-        <FlashPicker flashes={filteredColored} selected={selected} onChange={setSelected} />
+      {/* Desktop sidebar — hidden on mobile */}
+      <aside className="hidden space-y-6 md:block md:sticky md:top-4 md:self-start">
+        {sidebarContents}
       </aside>
 
       <section className="space-y-4">
+        {/* Mobile filter trigger — hidden on desktop */}
+        <div className="flex items-center gap-2 md:hidden">
+          <Sheet>
+            <SheetTrigger asChild>
+              <button className="inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters &amp; Flashes
+                {(activeFilters > 0 || selectedCount > 0) && (
+                  <span className="ml-0.5 flex items-center gap-1">
+                    {activeFilters > 0 && (
+                      <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground leading-none">
+                        {activeFilters}
+                      </span>
+                    )}
+                    {selectedCount > 0 && (
+                      <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold text-foreground leading-none">
+                        {selectedCount}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </button>
+            </SheetTrigger>
+            <SheetContent title="Filters &amp; Flashes">
+              {sidebarContents}
+            </SheetContent>
+          </Sheet>
+        </div>
+
         <div className="flex flex-wrap items-center gap-3">
           <AxisToggle
             label="Compare"
