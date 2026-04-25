@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listAllWithReadings } from "@/lib/queries";
 import { FlashChartView } from "@/components/FlashChartView";
+import pkg from "../../package.json";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function Home() {
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">bgateb's Flash Duration Charts</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             Measured <span className="font-medium text-foreground">t0.1</span> flash duration across power settings for
-            every flash unit I&rsquo;ve tested (and some readings I've collected from around the web.)<br />Toggle flashes on and off, 
+            every flash unit I&rsquo;ve tested (and some readings I've collected from around the web.)<br /><br />Toggle flashes on and off, 
             switch the X-axis between fractional power and stops below full, and hover any point for the precise reading.<br /><br />
             For more information about the methodology, please read the <a href="https://www.bgateb.com/blog/2017/04/14/2017-4-13-flash-duration-analysis-with-the-sekonic-l858d-u">original blog post.</a>
           </p>
@@ -48,6 +49,10 @@ export default async function Home() {
       ) : (
         <FlashChartView flashes={flashes} />
       )}
+
+      <footer className="mt-12 border-t pt-4 text-center text-xs text-muted-foreground">
+        v{pkg.version}
+      </footer>
     </main>
   );
 }
