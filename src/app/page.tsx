@@ -6,7 +6,12 @@ import pkg from "../../package.json";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
   let flashes: Awaited<ReturnType<typeof listAllWithReadings>> = [];
   let loadError: string | null = null;
   try {
@@ -52,7 +57,7 @@ export default async function Home() {
           No flashes yet. <Link href="/admin" className="font-medium text-foreground underline">Add your first flash</Link> to see it on the chart.
         </div>
       ) : (
-        <FlashChartView flashes={flashes} />
+        <FlashChartView flashes={flashes} initialParams={params} />
       )}
 
       <footer className="mt-12 border-t pt-4 text-center text-xs text-muted-foreground">

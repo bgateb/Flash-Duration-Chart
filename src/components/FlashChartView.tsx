@@ -1,15 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FlashWithReadings, Reading } from "@/lib/types";
 import { colorForIndex } from "@/lib/colors";
 import { FlashChart } from "./FlashChart";
 import { FlashPicker } from "./FlashPicker";
 import { FlashFilters } from "./FlashFilters";
-import { applyFilters, activeFilterCount, FLASH_FILTERS, type FilterState } from "@/lib/filters";
+import {
+  applyFilters,
+  activeFilterCount,
+  clearAllFilters,
+  selectedValues,
+  selectedRange,
+  FLASH_FILTERS,
+  type FilterState,
+} from "@/lib/filters";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Sheet, SheetTrigger, SheetContent } from "./ui/sheet";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal, Link2, Check } from "lucide-react";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 
@@ -44,7 +52,101 @@ export type Series = {
   readings: Reading[];
 };
 
-export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
+// ---------------------------------------------------------------------------
+// URL state serialization / deserialization
+// ---------------------------------------------------------------------------
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function getParam(params: SearchParams, key: string): string | undefined {
+  const v = params[key];
+  return Array.isArray(v) ? v[0] : v;
+}
+
+function parseInitialState(params: SearchParams) {
+  const filterState: FilterState = {};
+
+  const brand = getParam(params, "brand");
+  if (brand) {
+    const values = brand.split(",").filter(Boolean);
+    if (values.length) filterState["manufacturer"] = { kind: "multi-select", values };
+  }
+
+  const type = getParam(params, "type");
+  if (type) {
+    const values = type.split(",").filter(Boolean);
+    if (values.length) filterState["type"] = { kind: "multi-select", values };
+  }
+
+  const pow = getParam(params, "pow");
+  if (pow) {
+    const [minStr, maxStr] = pow.split(",");
+    const min = Number(minStr);
+    const max = Number(maxStr);
+    if (Number.isFinite(min) && Number.isFinite(max)) {
+      filterState["power"] = { kind: "range", min, max };
+    }
+  }
+
+  // Series: repeated ?s=flashId:mode params OR comma-separated in one param
+  const rawS = params["s"];
+  const sArr = Array.isArray(rawS) ? rawS : rawS ? [rawS] : [];
+  const selected = new Set<string>(sArr.flatMap((v) => v.split(",")).filter(Boolean));
+
+  const pa = getParam(params, "pa");
+  const powerAxis: PowerAxis = pa === "stops" ? "stops" : "fraction";
+
+  const da = getParam(params, "da");
+  const durationAxis: DurationAxis = da === "seconds" ? "seconds" : "one-over-x";
+
+  const cm = getParam(params, "cm");
+  const compareMode: CompareMode = cm === "absolute" ? "absolute" : "relative";
+
+  return { filterState, selected, powerAxis, durationAxis, compareMode };
+}
+
+function buildUrl(
+  filterState: FilterState,
+  selected: Set<string>,
+  powerAxis: PowerAxis,
+  durationAxis: DurationAxis,
+  compareMode: CompareMode,
+): string {
+  const parts: string[] = [];
+
+  const brands = selectedValues(filterState, "manufacturer");
+  if (brands.length) parts.push(`brand=${brands.map(encodeURIComponent).join(",")}`);
+
+  const types = selectedValues(filterState, "type");
+  if (types.length) parts.push(`type=${types.map(encodeURIComponent).join(",")}`);
+
+  const powRange = selectedRange(filterState, "power");
+  if (powRange) parts.push(`pow=${powRange.min},${powRange.max}`);
+
+  // Each selected series as a separate param (colons are valid in query strings)
+  for (const id of selected) parts.push(`s=${id}`);
+
+  if (powerAxis !== "fraction") parts.push(`pa=${powerAxis}`);
+  if (durationAxis !== "one-over-x") parts.push(`da=${durationAxis}`);
+  if (compareMode !== "relative") parts.push(`cm=${compareMode}`);
+
+  const qs = parts.join("&");
+  return window.location.pathname + (qs ? `?${qs}` : "");
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export function FlashChartView({
+  flashes,
+  initialParams = {},
+}: {
+  flashes: FlashWithReadings[];
+  initialParams?: SearchParams;
+}) {
+  const init = useMemo(() => parseInitialState(initialParams), []);  // eslint-disable-line react-hooks/exhaustive-deps
+
   // Color + modes per flash. Colors are assigned from the full list so filters
   // don't re-color things as items appear and disappear.
   const colored: ColoredFlash[] = useMemo(() => {
@@ -54,7 +156,7 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
     });
   }, [flashes]);
 
-  const [filterState, setFilterState] = useState<FilterState>({});
+  const [filterState, setFilterState] = useState<FilterState>(init.filterState);
   const filteredColored = useMemo(
     () => applyFilters(colored, FLASH_FILTERS, filterState),
     [colored, filterState],
@@ -63,9 +165,7 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
   // Dash-by-mode is computed from the full list so dash patterns stay stable
   // when filters hide/show flashes.
   const dashByMode = useMemo(() => {
-    const allModes = sortModes(
-      Array.from(new Set(colored.flatMap((f) => f.modes)))
-    );
+    const allModes = sortModes(Array.from(new Set(colored.flatMap((f) => f.modes))));
     const map: Record<string, string> = {};
     allModes.forEach((m, i) => {
       map[m] = DASH_PATTERNS[Math.min(i, DASH_PATTERNS.length - 1)];
@@ -93,16 +193,27 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
     return list;
   }, [filteredColored, dashByMode]);
 
-  // Selection keyed by series id. Default: nothing selected — user picks what
-  // to display so first load isn't a wall of overlapping lines.
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [powerAxis, setPowerAxis] = useState<PowerAxis>("fraction");
-  const [durationAxis, setDurationAxis] = useState<DurationAxis>("one-over-x");
-  const [compareMode, setCompareMode] = useState<CompareMode>("relative");
+  // Selection keyed by series id.
+  const [selected, setSelected] = useState<Set<string>>(init.selected);
+  const [powerAxis, setPowerAxis] = useState<PowerAxis>(init.powerAxis);
+  const [durationAxis, setDurationAxis] = useState<DurationAxis>(init.durationAxis);
+  const [compareMode, setCompareMode] = useState<CompareMode>(init.compareMode);
+
+  // Sync state → URL (replaceState so back button is unaffected)
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    // Skip the very first render if no params were in the URL — keeps it clean
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      if (Object.keys(initialParams).length === 0) return;
+    }
+    const url = buildUrl(filterState, selected, powerAxis, durationAxis, compareMode);
+    window.history.replaceState(null, "", url);
+  }, [filterState, selected, powerAxis, durationAxis, compareMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const visibleSeries = useMemo(
     () => allSeries.filter((s) => selected.has(s.id)),
-    [allSeries, selected]
+    [allSeries, selected],
   );
 
   const hiddenFlashNames = useMemo(() => {
@@ -165,6 +276,14 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
           </Sheet>
         </div>
 
+        {/* Filter summary bar — always visible */}
+        <FilterSummary
+          shown={filteredColored.length}
+          total={colored.length}
+          activeFilters={activeFilters}
+          onClearFilters={() => setFilterState(clearAllFilters())}
+        />
+
         <div className="flex flex-wrap items-center gap-3">
           <AxisToggle
             label="Compare"
@@ -218,6 +337,84 @@ export function FlashChartView({ flashes }: { flashes: FlashWithReadings[] }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+function FilterSummary({
+  shown,
+  total,
+  activeFilters,
+  onClearFilters,
+}: {
+  shown: number;
+  total: number;
+  activeFilters: number;
+  onClearFilters: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <p className="text-xs text-muted-foreground">
+        Showing{" "}
+        <span className="font-medium text-foreground">{shown}</span>
+        {" "}of{" "}
+        <span className="font-medium text-foreground">{total}</span>
+        {" "}flashes
+        {activeFilters > 0 && (
+          <>
+            <span className="mx-1.5">·</span>
+            <span>
+              {activeFilters} filter{activeFilters === 1 ? "" : "s"} active
+            </span>
+            <span className="mx-1.5">·</span>
+            <button
+              onClick={onClearFilters}
+              className="underline-offset-2 hover:text-foreground hover:underline"
+            >
+              clear
+            </button>
+          </>
+        )}
+      </p>
+      <CopyLinkButton />
+    </div>
+  );
+}
+
+function CopyLinkButton() {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback: select the URL bar — not much else we can do
+    }
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      aria-label="Copy link to current view"
+      className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+    >
+      {copied ? (
+        <>
+          <Check className="h-3.5 w-3.5" />
+          Copied!
+        </>
+      ) : (
+        <>
+          <Link2 className="h-3.5 w-3.5" />
+          Copy link
+        </>
+      )}
+    </button>
+  );
+}
+
 function AxisToggle({
   label,
   value,
@@ -263,7 +460,7 @@ function ReadingsTable({ series }: { series: Series[] }) {
       ct: r.color_temp_k,
       notes: r.notes,
       ws: effectiveWs(r.stops_below_full, s.ratedWs),
-    }))
+    })),
   );
   if (rows.length === 0) return null;
   return (
