@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
+  Customized,
   Line,
   LineChart,
   ReferenceArea,
@@ -22,9 +23,9 @@ import type { PowerAxis, DurationAxis, CompareMode, Series } from "./FlashChartV
 // commonly-cited shutter speed so users can eyeball whether a given flash
 // duration is faster or slower than, say, the typical sync speed.
 const REFERENCE_LINES: { y: number; label: string }[] = [
-  { y: 1 / 250, label: "1/250s · sync" },
+  { y: 1 / 250, label: "1/250s · max x-sync" },
   { y: 1 / 1000, label: "1/1000s · freeze" },
-  { y: 1 / 8000, label: "1/8000s · max electronic" },
+  { y: 1 / 8000, label: "1/8000s · HSS max" },
 ];
 
 // Cap the tooltip rows so a 30-flash selection doesn't render a wall of text.
@@ -53,6 +54,17 @@ export function FlashChart({
 
   // Hover-to-highlight: when a series is hovered (line or legend), fade others.
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  // Voronoi-style hover. We keep references to the rendered axis scales
+  // (captured via Recharts' <Customized> escape hatch) and to the chart's
+  // plot-area geometry. Together these let us answer "given the cursor's
+  // pixel position, which series' point is closest?" — Observable Plot's
+  // `pointer` mark and the patterns popularized by D3-Delaunay use the same
+  // idea. A full Voronoi diagram is unnecessary here because Recharts
+  // already snaps `activeLabel` to the nearest X column; we just resolve the
+  // Y axis ourselves and pick the series whose data point is closest in
+  // pixel space.
+  const scalesRef = useRef<{ y: ((v: number) => number) | null }>({ y: null });
 
   // Reference lines toggle (default on). Local state — view preference, not
   // worth round-tripping through the URL.
@@ -87,8 +99,52 @@ export function FlashChart({
   }
 
   function onChartMouseMove(e: any) {
-    if (!selectingRef.current || !e || e.activeLabel == null) return;
-    setRefRight(Number(e.activeLabel));
+    if (!e) return;
+
+    // Drag-to-zoom takes priority — extend the zoom rect, skip hover picking.
+    if (selectingRef.current) {
+      if (e.activeLabel != null) setRefRight(Number(e.activeLabel));
+      return;
+    }
+
+    // Voronoi-style hover. `e.activeLabel` is the X data value Recharts has
+    // snapped to (nearest column); `e.chartY` is the cursor's pixel Y on the
+    // chart SVG. We project each series' data Y at that column to pixel
+    // space and pick the closest one. Cap distance to keep the highlight
+    // from sticking when the cursor is far above/below all lines.
+    const yScale = scalesRef.current.y;
+    if (e.activeLabel == null || e.chartY == null || yScale == null) return;
+
+    const activeX = Number(e.activeLabel);
+    // Find the row matching this X column. Use exact match when possible,
+    // fall back to closest (covers fractional-stop readings where powers
+    // are non-integer).
+    const row =
+      combinedData.find((r) => r.power === activeX) ??
+      combinedData.reduce(
+        (best, r) =>
+          Math.abs(r.power - activeX) < Math.abs(best.power - activeX) ? r : best,
+        combinedData[0],
+      );
+    if (!row) return;
+
+    let bestId: string | null = null;
+    let bestDist = Infinity;
+    for (const cfg of lineConfigs) {
+      const yData = row[`t_${cfg.key}`];
+      if (typeof yData !== "number") continue;
+      const yPixel = yScale(yData);
+      const dist = Math.abs(e.chartY - yPixel);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestId = cfg.id;
+      }
+    }
+    setHoveredId(bestDist < 60 ? bestId : null);
+  }
+
+  function onChartMouseLeave() {
+    setHoveredId(null);
   }
 
   function onChartMouseUp() {
@@ -261,10 +317,12 @@ export function FlashChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={combinedData}
-            margin={{ top: 16, right: 24, left: 8, bottom: 28 }}
+            // Right margin reserves a label gutter for direct line labels.
+            margin={{ top: 16, right: 96, left: 8, bottom: 28 }}
             onMouseDown={onChartMouseDown}
             onMouseMove={onChartMouseMove}
             onMouseUp={onChartMouseUp}
+            onMouseLeave={onChartMouseLeave}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis
@@ -369,8 +427,6 @@ export function FlashChart({
                   activeDot={{ r: 5 }}
                   isAnimationActive={false}
                   connectNulls
-                  onMouseEnter={() => setHoveredId(cfg.id)}
-                  onMouseLeave={() => setHoveredId(null)}
                 />
               );
             })}
@@ -386,6 +442,98 @@ export function FlashChart({
                 strokeOpacity={0.4}
               />
             )}
+
+            {/* Customized escape hatch: captures the rendered y-scale for the
+                Voronoi-style hover, and renders direct line labels at the
+                right edge with collision avoidance. Inspired by the FT Visual
+                Vocabulary and NYT/Pudding line-chart conventions: keep the
+                eye on the line by labeling it in place instead of forcing a
+                legend lookup. */}
+            <Customized
+              component={(props: any) => {
+                const yMap = props.yAxisMap as Record<string, any> | undefined;
+                const yScale = yMap ? Object.values(yMap)[0]?.scale : null;
+                if (yScale) scalesRef.current.y = yScale;
+
+                if (!yScale || lineConfigs.length === 0) return null;
+
+                const offset = props.offset as {
+                  left: number;
+                  top: number;
+                  width: number;
+                  height: number;
+                };
+
+                type LabelEntry = {
+                  id: string;
+                  name: string;
+                  color: string;
+                  y: number;
+                };
+                const labels: LabelEntry[] = [];
+                for (const cfg of lineConfigs) {
+                  // Rightmost reading for this series within the visible
+                  // domain; that's where its line ends, where the label goes.
+                  let lastRow: Record<string, any> | null = null;
+                  for (let i = combinedData.length - 1; i >= 0; i--) {
+                    const row = combinedData[i];
+                    if (row.power < activeXDomain[0] || row.power > activeXDomain[1]) continue;
+                    if (typeof row[`t_${cfg.key}`] === "number") {
+                      lastRow = row;
+                      break;
+                    }
+                  }
+                  if (!lastRow) continue;
+                  labels.push({
+                    id: cfg.id,
+                    name: cfg.name,
+                    color: cfg.color,
+                    y: yScale(lastRow[`t_${cfg.key}`]),
+                  });
+                }
+
+                // Collision avoidance: sort top-down, nudge each label below
+                // the previous one if they'd overlap. Then clamp to plot
+                // bounds so nothing spills into the X axis.
+                labels.sort((a, b) => a.y - b.y);
+                const minSpacing = 12;
+                for (let i = 1; i < labels.length; i++) {
+                  if (labels[i].y - labels[i - 1].y < minSpacing) {
+                    labels[i].y = labels[i - 1].y + minSpacing;
+                  }
+                }
+                const plotTop = offset.top;
+                const plotBottom = offset.top + offset.height;
+                for (const l of labels) {
+                  l.y = Math.max(plotTop, Math.min(plotBottom, l.y));
+                }
+
+                const labelX = offset.left + offset.width + 6;
+
+                return (
+                  <g pointerEvents="none">
+                    {labels.map((l) => {
+                      const isHovered = hoveredId === l.id;
+                      const dimmed = hoveredId != null && !isHovered;
+                      return (
+                        <text
+                          key={l.id}
+                          x={labelX}
+                          y={l.y}
+                          dy="0.32em"
+                          fontSize={10}
+                          fontWeight={isHovered ? 600 : 400}
+                          fill={l.color}
+                          opacity={dimmed ? 0.25 : 1}
+                        >
+                          {truncateLabel(l.name, 16)}
+                        </text>
+                      );
+                    })}
+                  </g>
+                );
+              }}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -408,6 +556,11 @@ export function FlashChart({
 
 function encodeKey(id: string): string {
   return id.replace(/[^a-zA-Z0-9]/g, "_");
+}
+
+function truncateLabel(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + "…";
 }
 
 function formatPower(power: number, axis: PowerAxis): string {
