@@ -13,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Ruler, MousePointer2 } from "lucide-react";
+import { Ruler, MousePointer2, Download } from "lucide-react";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 import { cn } from "@/lib/cn";
@@ -242,12 +242,85 @@ export function FlashChart({
     };
   }, [combinedData, lineConfigs, compareMode]);
 
+  // Minor Y gridlines: 2× and 5× of each decade boundary on a log10 axis.
+  // Standard log-scale convention (Few, Cleveland) — gives readers reference
+  // points between the order-of-magnitude major lines without the noise of
+  // every integer multiple. Photographer-relevant values like 1/2000s and
+  // 1/5000s land near these.
+  const minorYTicks = useMemo(() => {
+    const ticks: number[] = [];
+    const startExp = Math.floor(Math.log10(yDomain[0]));
+    const endExp = Math.ceil(Math.log10(yDomain[1]));
+    for (let e = startExp; e <= endExp; e++) {
+      const decade = Math.pow(10, e);
+      for (const m of [2, 5]) {
+        const v = m * decade;
+        if (v > yDomain[0] && v < yDomain[1]) ticks.push(v);
+      }
+    }
+    return ticks;
+  }, [yDomain]);
+
   // Apply zoom — snap ticks to what's visible
   const activeXDomain = zoomedX ?? xDomain;
   const activeXTicks = useMemo(
     () => powerTicks(activeXDomain[0], activeXDomain[1]),
     [activeXDomain],
   );
+
+  // ---------------------------------------------------------------------------
+  // SVG export
+  // ---------------------------------------------------------------------------
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  function exportSvg() {
+    const svg = chartContainerRef.current?.querySelector("svg");
+    if (!svg) return;
+
+    const clone = svg.cloneNode(true) as SVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+    // The chart references theme colors as `hsl(var(--border))` etc. Those
+    // CSS custom properties live on the document root and don't follow a
+    // serialized SVG out of the page. We resolve them once at export time
+    // and inline the values on the clone so the standalone file looks the
+    // same as what the user is seeing.
+    const docStyle = getComputedStyle(document.documentElement);
+    const vars = [
+      "--background",
+      "--foreground",
+      "--card",
+      "--border",
+      "--muted",
+      "--muted-foreground",
+      "--primary",
+      "--primary-foreground",
+    ];
+    const inlineVars = vars
+      .map((v) => `${v}: ${docStyle.getPropertyValue(v).trim()};`)
+      .join(" ");
+    const existing = clone.getAttribute("style") ?? "";
+    clone.setAttribute("style", `${existing} ${inlineVars}`.trim());
+
+    // Background rectangle so the exported file isn't transparent (renders
+    // correctly when dropped into other apps with a dark background).
+    const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    bg.setAttribute("width", "100%");
+    bg.setAttribute("height", "100%");
+    bg.setAttribute("fill", `hsl(${docStyle.getPropertyValue("--background").trim()})`);
+    clone.insertBefore(bg, clone.firstChild);
+
+    const xml = new XMLSerializer().serializeToString(clone);
+    const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "flash-duration-chart.svg";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 
   // Reference lines that fall inside the current Y-domain. Out-of-range lines
   // are hidden so we don't squash the chart with labels.
@@ -266,7 +339,7 @@ export function FlashChart({
   // ---------------------------------------------------------------------------
   return (
     <div className="relative">
-      {/* Top-right toolbar: refs toggle + reset zoom (when zoomed). */}
+      {/* Top-right toolbar: refs toggle, SVG export, reset zoom (when zoomed). */}
       <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
         <button
           onClick={() => setShowRefs((v) => !v)}
@@ -282,6 +355,16 @@ export function FlashChart({
           <Ruler className="h-3 w-3" />
           Refs
         </button>
+        <button
+          onClick={exportSvg}
+          disabled={isEmpty}
+          title="Download chart as SVG"
+          aria-label="Download chart as SVG"
+          className="inline-flex items-center gap-1 rounded border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download className="h-3 w-3" />
+          SVG
+        </button>
         {zoomedX && (
           <button
             onClick={() => setZoomedX(null)}
@@ -293,6 +376,7 @@ export function FlashChart({
       </div>
 
       <div
+        ref={chartContainerRef}
         className={cn(
           "relative w-full",
           // Shorter on mobile so the picker isn't pushed below the fold
@@ -386,6 +470,20 @@ export function FlashChart({
                 )
               }
             />
+
+            {/* Minor Y gridlines (2x, 5x of each decade) — visual hierarchy
+                pattern: major gridlines from CartesianGrid stay prominent,
+                minors fade into the background as soft reference points. */}
+            {minorYTicks.map((y) => (
+              <ReferenceLine
+                key={`minor-${y}`}
+                y={y}
+                stroke="hsl(var(--border))"
+                strokeOpacity={0.4}
+                strokeDasharray="1 3"
+                ifOverflow="hidden"
+              />
+            ))}
 
             {/* Photographer reference lines (horizontal at common shutter speeds). */}
             {visibleRefs.map((r) => (

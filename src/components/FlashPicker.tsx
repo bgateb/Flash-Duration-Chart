@@ -10,10 +10,17 @@ export function FlashPicker({
   flashes,
   selected,
   onChange,
+  sparklineRange,
 }: {
   flashes: ColoredFlash[];
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
+  /**
+   * Global x/y ranges for sparklines. Computed from the unfiltered catalog
+   * so all rows share a scale — without that, sparklines aren't a real
+   * comparison (Tufte). `null` skips sparkline rendering entirely.
+   */
+  sparklineRange?: { x: readonly [number, number]; y: readonly [number, number] } | null;
 }) {
   function seriesKey(flashId: number, mode: string) {
     return `${flashId}:${mode}`;
@@ -176,6 +183,8 @@ export function FlashPicker({
                   const showNestedModes =
                     modes.length > 1 || (modes.length === 1 && modes[0] !== "Normal");
 
+                  const testedYear = parseTestedYear(f.tested_on);
+
                   return (
                     <li key={f.id}>
                       <div className="flex items-start gap-1">
@@ -200,8 +209,23 @@ export function FlashPicker({
                             <span className="ml-1 text-xs text-muted-foreground">
                               · {totalReadings} pts
                             </span>
+                            {testedYear ? (
+                              <span
+                                className="ml-1 text-xs text-muted-foreground"
+                                title={`Tested ${f.tested_on}`}
+                              >
+                                · {testedYear}
+                              </span>
+                            ) : null}
                           </span>
                         </label>
+                        {sparklineRange ? (
+                          <Sparkline
+                            readings={f.readings}
+                            color={f.color}
+                            range={sparklineRange}
+                          />
+                        ) : null}
                         <button
                           onClick={() => setDetailFlash(f)}
                           aria-label={`Details for ${f.manufacturer} ${f.model}`}
@@ -245,5 +269,90 @@ export function FlashPicker({
 
       <FlashDetail flash={detailFlash} onClose={() => setDetailFlash(null)} />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the year out of a `tested_on` value. The DB stores either a full ISO
+ * date ("2024-03-15") or a year-only string ("2024"); both are handled.
+ * Returns null for missing/unparseable inputs.
+ */
+function parseTestedYear(tested_on: string | null | undefined): string | null {
+  if (!tested_on) return null;
+  const m = tested_on.match(/^(\d{4})/);
+  return m ? m[1] : null;
+}
+
+const SPARK_W = 56;
+const SPARK_H = 16;
+const SPARK_PAD = 2;
+
+/**
+ * A Tufte-style sparkline preview of a flash's t0.1 curve. All sparklines
+ * share the same global log-log scale (passed via `range`) so the comparison
+ * across rows is meaningful — without that, sparklines aren't a comparison,
+ * they're decoration.
+ */
+function Sparkline({
+  readings,
+  color,
+  range,
+}: {
+  readings: { stops_below_full: number; t_one_tenth_seconds: number; mode: string }[];
+  color: string;
+  range: { x: readonly [number, number]; y: readonly [number, number] };
+}) {
+  if (readings.length === 0) return null;
+
+  // Sort all readings by x (power) so the polyline traces left-to-right.
+  // Multi-mode flashes will produce one merged path; that's fine for a
+  // gestalt-level preview — the FlashDetail modal is where mode-by-mode
+  // comparison lives.
+  const pts = readings
+    .map((r) => ({
+      x: Math.pow(2, r.stops_below_full),
+      y: r.t_one_tenth_seconds,
+    }))
+    .filter((p) => p.x > 0 && p.y > 0)
+    .sort((a, b) => a.x - b.x);
+
+  if (pts.length === 0) return null;
+
+  const [xMin, xMax] = range.x;
+  const [yMin, yMax] = range.y;
+  const logXMin = Math.log2(xMin);
+  const logXMax = Math.log2(xMax);
+  const logYMin = Math.log10(yMin);
+  const logYMax = Math.log10(yMax);
+  const xSpan = Math.max(logXMax - logXMin, 1e-6);
+  const ySpan = Math.max(logYMax - logYMin, 1e-6);
+
+  function px(v: number): number {
+    return SPARK_PAD + ((Math.log2(v) - logXMin) / xSpan) * (SPARK_W - SPARK_PAD * 2);
+  }
+  function py(v: number): number {
+    // Inverted: small t (faster) at top, large t at bottom, matching the
+    // main chart's orientation.
+    return SPARK_PAD + (1 - (Math.log10(v) - logYMin) / ySpan) * (SPARK_H - SPARK_PAD * 2);
+  }
+
+  const d = pts
+    .map((p, i) => `${i === 0 ? "M" : "L"}${px(p.x).toFixed(1)} ${py(p.y).toFixed(1)}`)
+    .join(" ");
+
+  return (
+    <svg
+      width={SPARK_W}
+      height={SPARK_H}
+      className="mt-1 shrink-0"
+      aria-hidden="true"
+      role="presentation"
+    >
+      <path d={d} stroke={color} strokeWidth={1} fill="none" opacity={0.7} />
+    </svg>
   );
 }

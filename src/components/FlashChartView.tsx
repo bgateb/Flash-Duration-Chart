@@ -227,6 +227,31 @@ export function FlashChartView({
   const activeFilters = activeFilterCount(filterState);
   const selectedCount = selected.size;
 
+  // Global ranges for picker sparklines. Computed from the full (unfiltered)
+  // catalog so sparklines stay visually comparable when filters are applied
+  // — Tufte's principle for sparkline series: shared scale or it's not a
+  // comparison.
+  const sparklineRange = useMemo(() => {
+    let xMin = Infinity, xMax = -Infinity;
+    let yMin = Infinity, yMax = -Infinity;
+    for (const f of colored) {
+      for (const r of f.readings) {
+        const x = Math.pow(2, r.stops_below_full);
+        const y = r.t_one_tenth_seconds;
+        if (x > 0 && Number.isFinite(x)) {
+          if (x < xMin) xMin = x;
+          if (x > xMax) xMax = x;
+        }
+        if (y > 0 && Number.isFinite(y)) {
+          if (y < yMin) yMin = y;
+          if (y > yMax) yMax = y;
+        }
+      }
+    }
+    if (!Number.isFinite(xMin) || !Number.isFinite(yMin)) return null;
+    return { x: [xMin, xMax] as const, y: [yMin, yMax] as const };
+  }, [colored]);
+
   const sidebarContents = (
     <>
       <FlashFilters
@@ -235,7 +260,12 @@ export function FlashChartView({
         state={filterState}
         onChange={setFilterState}
       />
-      <FlashPicker flashes={filteredColored} selected={selected} onChange={setSelected} />
+      <FlashPicker
+        flashes={filteredColored}
+        selected={selected}
+        onChange={setSelected}
+        sparklineRange={sparklineRange}
+      />
     </>
   );
 
