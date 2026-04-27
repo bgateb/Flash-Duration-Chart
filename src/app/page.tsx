@@ -3,6 +3,7 @@ import { listAllWithReadings } from "@/lib/queries";
 import { FlashChartView } from "@/components/FlashChartView";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ChartGuide } from "@/components/ChartGuide";
+import { requireAdmin } from "@/lib/session";
 import pkg from "../../package.json";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,12 @@ export default async function Home({
   } catch (err: any) {
     loadError = err?.message ?? "Failed to load data";
   }
+  let isAdmin = false;
+  try {
+    isAdmin = await requireAdmin();
+  } catch {
+    isAdmin = false;
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 md:py-12">
@@ -35,12 +42,14 @@ export default async function Home({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <ThemeToggle />
-          <Link
-            href="/admin"
-            className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          >
-            admin
-          </Link>
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              admin
+            </Link>
+          )}
         </div>
       </header>
 
@@ -54,7 +63,9 @@ export default async function Home({
         </div>
       ) : flashes.length === 0 ? (
         <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground">
-          No flashes yet. <Link href="/admin" className="font-medium text-foreground underline">Add your first flash</Link> to see it on the chart.
+          No flashes yet.{isAdmin && (
+            <> <Link href="/admin" className="font-medium text-foreground underline">Add your first flash</Link> to see it on the chart.</>
+          )}
         </div>
       ) : (
         <>
