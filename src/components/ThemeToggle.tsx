@@ -16,7 +16,10 @@ export function ThemeToggle() {
     setDark(next);
     document.documentElement.classList.toggle("dark", next);
     try {
-      localStorage.setItem("theme", next ? "dark" : "light");
+      const value = next ? "dark" : "light";
+      // Cookie is the source of truth — read server-side on next render
+      document.cookie = `theme=${value}; path=/; max-age=31536000; SameSite=Lax`;
+      localStorage.setItem("theme", value);
     } catch {}
   }
 
