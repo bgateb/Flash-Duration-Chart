@@ -17,7 +17,7 @@ import { Ruler, MousePointer2, Download } from "lucide-react";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 import { cn } from "@/lib/cn";
-import type { PowerAxis, DurationAxis, CompareMode, Series } from "./FlashChartView";
+import type { PowerAxis, DurationAxis, CompareMode, Series, TooltipMode } from "./FlashChartView";
 
 // Photographer reference lines on the Y-axis (duration). Each marks a
 // commonly-cited shutter speed so users can eyeball whether a given flash
@@ -36,11 +36,13 @@ export function FlashChart({
   powerAxis,
   durationAxis,
   compareMode,
+  tooltipMode,
 }: {
   series: Series[];
   powerAxis: PowerAxis;
   durationAxis: DurationAxis;
   compareMode: CompareMode;
+  tooltipMode: TooltipMode;
 }) {
   // ---------------------------------------------------------------------------
   // Zoom state
@@ -104,6 +106,13 @@ export function FlashChart({
     // Drag-to-zoom takes priority — extend the zoom rect, skip hover picking.
     if (selectingRef.current) {
       if (e.activeLabel != null) setRefRight(Number(e.activeLabel));
+      return;
+    }
+
+    // Crosshair mode: skip the Voronoi auto-highlight so all lines stay
+    // equally weighted at the hovered X. Legend hover still works.
+    if (tooltipMode === "crosshair") {
+      if (hoveredId != null) setHoveredId(null);
       return;
     }
 
@@ -453,11 +462,20 @@ export function FlashChart({
               cursor={
                 selecting
                   ? false
-                  : {
-                      stroke: "hsl(var(--primary))",
-                      strokeOpacity: 0.35,
-                      strokeDasharray: "2 4",
-                    }
+                  : tooltipMode === "crosshair"
+                    ? {
+                        // Solid, higher-contrast guideline — without the
+                        // Voronoi auto-highlight, this is the user's
+                        // primary visual anchor for the X they're reading.
+                        stroke: "hsl(var(--primary))",
+                        strokeOpacity: 0.7,
+                        strokeWidth: 1,
+                      }
+                    : {
+                        stroke: "hsl(var(--primary))",
+                        strokeOpacity: 0.35,
+                        strokeDasharray: "2 4",
+                      }
               }
               content={
                 selecting ? () => null : (

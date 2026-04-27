@@ -7,6 +7,7 @@ import { FlashChart } from "./FlashChart";
 import { FlashPicker } from "./FlashPicker";
 import { FlashFilters } from "./FlashFilters";
 import { FilterChips } from "./FilterChips";
+import { FlashCommandPalette } from "./FlashCommandPalette";
 import {
   applyFilters,
   activeFilterCount,
@@ -17,13 +18,14 @@ import {
 } from "@/lib/filters";
 import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { Sheet, SheetTrigger, SheetContent } from "./ui/sheet";
-import { SlidersHorizontal, Link2, Check, ChevronUp, ChevronDown, Download } from "lucide-react";
+import { SlidersHorizontal, Link2, Check, ChevronUp, ChevronDown, Download, Search } from "lucide-react";
 import { stopsToFraction, stopsToLabel, effectiveWs, formatWs } from "@/lib/power";
 import { secondsToOneOverX, secondsToPrecise } from "@/lib/duration";
 
 export type PowerAxis = "fraction" | "stops";
 export type DurationAxis = "one-over-x" | "seconds";
 export type CompareMode = "relative" | "absolute";
+export type TooltipMode = "nearest" | "crosshair";
 
 // Dash pattern per mode. "Normal" is always solid; secondary modes get
 // progressively sparser dashes so the same-color variant reads as "same
@@ -102,7 +104,10 @@ function parseInitialState(params: SearchParams) {
   const cm = getParam(params, "cm");
   const compareMode: CompareMode = cm === "absolute" ? "absolute" : "relative";
 
-  return { filterState, selected, powerAxis, durationAxis, compareMode };
+  const tt = getParam(params, "tt");
+  const tooltipMode: TooltipMode = tt === "crosshair" ? "crosshair" : "nearest";
+
+  return { filterState, selected, powerAxis, durationAxis, compareMode, tooltipMode };
 }
 
 function buildUrl(
@@ -111,6 +116,7 @@ function buildUrl(
   powerAxis: PowerAxis,
   durationAxis: DurationAxis,
   compareMode: CompareMode,
+  tooltipMode: TooltipMode,
 ): string {
   const parts: string[] = [];
 
@@ -129,6 +135,7 @@ function buildUrl(
   if (powerAxis !== "fraction") parts.push(`pa=${powerAxis}`);
   if (durationAxis !== "one-over-x") parts.push(`da=${durationAxis}`);
   if (compareMode !== "relative") parts.push(`cm=${compareMode}`);
+  if (tooltipMode !== "nearest") parts.push(`tt=${tooltipMode}`);
 
   const qs = parts.join("&");
   return window.location.pathname + (qs ? `?${qs}` : "");
@@ -156,6 +163,7 @@ export function FlashChartView({
     });
   }, [flashes]);
 
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [filterState, setFilterState] = useState<FilterState>(init.filterState);
   const filteredColored = useMemo(
     () => applyFilters(colored, FLASH_FILTERS, filterState),
@@ -198,6 +206,7 @@ export function FlashChartView({
   const [powerAxis, setPowerAxis] = useState<PowerAxis>(init.powerAxis);
   const [durationAxis, setDurationAxis] = useState<DurationAxis>(init.durationAxis);
   const [compareMode, setCompareMode] = useState<CompareMode>(init.compareMode);
+  const [tooltipMode, setTooltipMode] = useState<TooltipMode>(init.tooltipMode);
 
   // Sync state → URL (replaceState so back button is unaffected)
   const isFirstRender = useRef(true);
@@ -207,9 +216,34 @@ export function FlashChartView({
       isFirstRender.current = false;
       if (Object.keys(initialParams).length === 0) return;
     }
-    const url = buildUrl(filterState, selected, powerAxis, durationAxis, compareMode);
+    const url = buildUrl(filterState, selected, powerAxis, durationAxis, compareMode, tooltipMode);
     window.history.replaceState(null, "", url);
-  }, [filterState, selected, powerAxis, durationAxis, compareMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterState, selected, powerAxis, durationAxis, compareMode, tooltipMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Global keybindings: Cmd/Ctrl+K and `/` open the command palette. Ignore
+  // `/` while a text input is focused so users can still type slashes in
+  // search boxes / form fields.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (isMod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
+      if (e.key === "/" && !isMod && !e.altKey && !e.shiftKey) {
+        const t = e.target as HTMLElement | null;
+        const tag = t?.tagName;
+        const isEditable =
+          tag === "INPUT" || tag === "TEXTAREA" || (t as HTMLElement)?.isContentEditable;
+        if (isEditable) return;
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const visibleSeries = useMemo(
     () => allSeries.filter((s) => selected.has(s.id)),
@@ -270,6 +304,17 @@ export function FlashChartView({
   );
 
   return (
+    <>
+    <FlashCommandPalette
+      open={paletteOpen}
+      onOpenChange={setPaletteOpen}
+      // Palette searches the **filtered** catalog so the user's active brand
+      // / type / output filters apply here too. Switch to `colored` if we
+      // want it to ignore filters.
+      flashes={filteredColored}
+      selected={selected}
+      onChange={setSelected}
+    />
     <div className="grid gap-6 md:grid-cols-[240px,1fr]">
       {/* Desktop sidebar — hidden on mobile */}
       <aside className="hidden space-y-6 md:block md:sticky md:top-4 md:self-start">
@@ -277,8 +322,15 @@ export function FlashChartView({
       </aside>
 
       <section className="space-y-4">
-        {/* Mobile filter trigger — hidden on desktop */}
+        {/* Mobile filter + find triggers — hidden on desktop */}
         <div className="flex items-center gap-2 md:hidden">
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Search className="h-4 w-4" />
+            Find a flash
+          </button>
           <Sheet>
             <SheetTrigger asChild>
               <button className="inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -310,6 +362,7 @@ export function FlashChartView({
         <FilterSummary
           shown={filteredColored.length}
           total={colored.length}
+          onFind={() => setPaletteOpen(true)}
         />
         {activeFilters > 0 ? (
           <FilterChips
@@ -349,6 +402,15 @@ export function FlashChartView({
               { value: "seconds", label: "Seconds" },
             ]}
           />
+          <AxisToggle
+            label="Tooltip"
+            value={tooltipMode}
+            onChange={(v) => setTooltipMode(v as TooltipMode)}
+            options={[
+              { value: "nearest", label: "Nearest" },
+              { value: "crosshair", label: "Crosshair" },
+            ]}
+          />
         </div>
 
         <div className="rounded-lg border bg-card p-2 md:p-4">
@@ -357,6 +419,7 @@ export function FlashChartView({
             powerAxis={powerAxis}
             durationAxis={durationAxis}
             compareMode={compareMode}
+            tooltipMode={tooltipMode}
           />
         </div>
 
@@ -369,6 +432,7 @@ export function FlashChartView({
         <ReadingsTable series={visibleSeries} />
       </section>
     </div>
+    </>
   );
 }
 
@@ -379,10 +443,18 @@ export function FlashChartView({
 function FilterSummary({
   shown,
   total,
+  onFind,
 }: {
   shown: number;
   total: number;
+  onFind: () => void;
 }) {
+  // OS-aware shortcut hint. Show ⌘K on Mac, Ctrl+K elsewhere. Falls back
+  // to Ctrl during SSR.
+  const isMac =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  const shortcut = isMac ? "⌘K" : "Ctrl+K";
+
   return (
     <div className="flex items-center justify-between gap-4">
       <p className="text-xs text-muted-foreground">
@@ -392,7 +464,21 @@ function FilterSummary({
         <span className="font-medium text-foreground">{total}</span>
         {" "}flashes
       </p>
-      <CopyLinkButton />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onFind}
+          aria-label="Find a flash (open command palette)"
+          title={`Find a flash (${shortcut} or /)`}
+          className="hidden items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors md:inline-flex"
+        >
+          <Search className="h-3.5 w-3.5" />
+          Find
+          <kbd className="ml-0.5 rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px]">
+            {shortcut}
+          </kbd>
+        </button>
+        <CopyLinkButton />
+      </div>
     </div>
   );
 }

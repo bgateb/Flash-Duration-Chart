@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Info, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Info, Search, X } from "lucide-react";
 import type { ColoredFlash } from "./FlashChartView";
 import { Checkbox } from "./ui/checkbox";
 import { FlashDetail } from "./FlashDetail";
+
+const EXPANDED_BRANDS_STORAGE_KEY = "fd.expandedBrands";
 
 export function FlashPicker({
   flashes,
@@ -54,18 +56,59 @@ export function FlashPicker({
 
   const [detailFlash, setDetailFlash] = useState<ColoredFlash | null>(null);
   const [search, setSearch] = useState("");
+  const [showOnlySelected, setShowOnlySelected] = useState(false);
 
-  // Apply search across manufacturer + model. Empty search short-circuits to
-  // the full list. A group is shown if either the manufacturer matches the
-  // query (showing all its flashes) or any individual flash matches.
+  // Brand groups collapsed by default; user-toggled expansions persist in
+  // localStorage. When a search is active, all groups with at least one match
+  // force-expand (without mutating the persisted set).
+  const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(EXPANDED_BRANDS_STORAGE_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        setExpandedBrands(new Set(arr.filter((v): v is string => typeof v === "string")));
+      }
+    } catch {
+      // localStorage unavailable or malformed — fall back to all-collapsed.
+    }
+  }, []);
+
+  function toggleBrandExpanded(manufacturer: string) {
+    setExpandedBrands((prev) => {
+      const next = new Set(prev);
+      if (next.has(manufacturer)) next.delete(manufacturer);
+      else next.add(manufacturer);
+      try {
+        window.localStorage.setItem(
+          EXPANDED_BRANDS_STORAGE_KEY,
+          JSON.stringify(Array.from(next)),
+        );
+      } catch {
+        // ignore — preference loss is recoverable
+      }
+      return next;
+    });
+  }
+
+  const isSearching = search.trim() !== "";
+
+  // Apply "show only selected" first, then search. Empty filters short-circuit.
   const visibleFlashes = useMemo(() => {
+    let list = flashes;
+    if (showOnlySelected) {
+      list = list.filter((f) =>
+        f.modes.some((m) => selected.has(seriesKey(f.id, m))),
+      );
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return flashes;
-    return flashes.filter((f) => {
+    if (!q) return list;
+    return list.filter((f) => {
       const hay = `${f.manufacturer} ${f.model}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [flashes, search]);
+  }, [flashes, search, showOnlySelected, selected]);
 
   function allOn() {
     // Selects every series currently visible (respects search/filters);
@@ -125,9 +168,33 @@ export function FlashPicker({
         ) : null}
       </div>
 
-      {groups.length === 0 ? (
+      {/* Show-only-selected toggle. When on, the list collapses to just the
+          flashes the user has currently selected — useful for managing a
+          comparison set without scrolling the full catalog. */}
+      <button
+        type="button"
+        onClick={() => setShowOnlySelected((v) => !v)}
+        aria-pressed={showOnlySelected}
+        className={[
+          "mb-2 inline-flex w-full items-center justify-between gap-2 rounded-md border px-2 py-1 text-[11px] transition-colors",
+          showOnlySelected
+            ? "border-primary/40 bg-primary/10 text-foreground"
+            : "border-border bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
+        ].join(" ")}
+      >
+        <span>Show only selected</span>
+        <span className="font-mono">{selected.size}</span>
+      </button>
+
+      {showOnlySelected && selected.size === 0 ? (
         <p className="px-1 py-2 text-xs text-muted-foreground">
-          No flashes match &ldquo;{search}&rdquo;.
+          No flashes selected — turn this off, or pick some from the list.
+        </p>
+      ) : groups.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-muted-foreground">
+          {isSearching
+            ? `No flashes match "${search}".`
+            : "No flashes."}
         </p>
       ) : null}
 
@@ -138,41 +205,69 @@ export function FlashPicker({
           );
           const groupAllOn = groupKeys.length > 0 && groupKeys.every((k) => selected.has(k));
           const groupSomeOn = groupKeys.some((k) => selected.has(k));
+          const selectedInGroup = groupKeys.reduce(
+            (n, k) => (selected.has(k) ? n + 1 : n),
+            0,
+          );
+          // Force-expand groups while searching or while filtering to selected
+          // only — those modes are intent-signals that the user wants to see
+          // matching rows, and forcing them open keeps results visible.
+          // showOnlySelected implies every visible group has selections, so
+          // we always reveal them in that mode too.
+          const isExpanded =
+            isSearching || showOnlySelected || expandedBrands.has(manufacturer);
 
           return (
             <div key={manufacturer}>
               {/* Manufacturer group header */}
               {gi > 0 && <div className="mb-2 border-t border-border/40" />}
               <div className="mb-1 flex items-center justify-between">
-                <button
-                  onClick={() => toggleAllForGroup(groupFlashes)}
-                  className="flex items-center gap-1.5 text-left"
-                  title={groupAllOn ? `Deselect all ${manufacturer}` : `Select all ${manufacturer}`}
-                >
-                  {/* Indeterminate-style indicator for the group */}
-                  <span
-                    className={[
-                      "inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-sm border text-[8px] font-bold leading-none transition-colors",
-                      groupAllOn
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : groupSomeOn
-                          ? "border-primary bg-primary/20 text-primary"
-                          : "border-border bg-transparent text-transparent",
-                    ].join(" ")}
-                    aria-hidden="true"
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleBrandExpanded(manufacturer)}
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? `Collapse ${manufacturer}` : `Expand ${manufacturer}`}
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
-                    {groupSomeOn ? "▪" : ""}
-                  </span>
-                  <span className="text-xs font-semibold text-foreground">
-                    {manufacturer}
-                  </span>
-                </button>
+                    {isExpanded ? (
+                      <ChevronDown className="h-3 w-3" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => toggleAllForGroup(groupFlashes)}
+                    className="flex items-center gap-1.5 text-left"
+                    title={groupAllOn ? `Deselect all ${manufacturer}` : `Select all ${manufacturer}`}
+                  >
+                    {/* Indeterminate-style indicator for the group */}
+                    <span
+                      className={[
+                        "inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-sm border text-[8px] font-bold leading-none transition-colors",
+                        groupAllOn
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : groupSomeOn
+                            ? "border-primary bg-primary/20 text-primary"
+                            : "border-border bg-transparent text-transparent",
+                      ].join(" ")}
+                      aria-hidden="true"
+                    >
+                      {groupSomeOn ? "▪" : ""}
+                    </span>
+                    <span className="text-xs font-semibold text-foreground">
+                      {manufacturer}
+                    </span>
+                  </button>
+                </div>
                 <span className="text-[11px] text-muted-foreground">
-                  {groupFlashes.length} {groupFlashes.length === 1 ? "unit" : "units"}
+                  {selectedInGroup > 0 ? `${selectedInGroup} / ` : ""}
+                  {groupFlashes.length}
                 </span>
               </div>
 
               {/* Flashes within group */}
+              {isExpanded ? (
               <ul className="space-y-1">
                 {groupFlashes.map((f) => {
                   const modes = f.modes;
@@ -262,6 +357,7 @@ export function FlashPicker({
                   );
                 })}
               </ul>
+              ) : null}
             </div>
           );
         })}
