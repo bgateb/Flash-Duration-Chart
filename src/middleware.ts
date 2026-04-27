@@ -10,13 +10,17 @@ export async function middleware(req: NextRequest) {
   } catch {
     // fall through to redirect on any session decode failure
   }
-  // Relative Location so the browser resolves against the original public URL
-  // (the upstream Apache proxy doesn't preserve Host, so req.nextUrl points at
-  // 127.0.0.1:3000 and an absolute redirect would leak the internal host).
-  return new NextResponse(null, {
-    status: 307,
-    headers: { Location: "/login" },
-  });
+  // Apache's mod_proxy_http forwards to 127.0.0.1:3000 without preserving Host,
+  // so build the redirect from X-Forwarded-Host/Proto (set by mod_proxy itself)
+  // to avoid leaking the internal host in the Location header.
+  const host =
+    req.headers.get("x-forwarded-host") ??
+    req.headers.get("host") ??
+    req.nextUrl.host;
+  const proto =
+    req.headers.get("x-forwarded-proto") ??
+    (process.env.NODE_ENV === "production" ? "https" : req.nextUrl.protocol.replace(":", ""));
+  return NextResponse.redirect(new URL("/login", `${proto}://${host}`));
 }
 
 export const config = {
