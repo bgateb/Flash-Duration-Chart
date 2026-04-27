@@ -17,9 +17,13 @@ export async function middleware(req: NextRequest) {
     req.headers.get("x-forwarded-host") ??
     req.headers.get("host") ??
     req.nextUrl.host;
+  // DreamHost terminates SSL upstream and forwards X-Forwarded-Proto: http,
+  // so trusting that header would downgrade the public redirect. The site is
+  // HTTPS-only in prod, so hardcode it.
   const proto =
-    req.headers.get("x-forwarded-proto") ??
-    (process.env.NODE_ENV === "production" ? "https" : req.nextUrl.protocol.replace(":", ""));
+    process.env.NODE_ENV === "production"
+      ? "https"
+      : req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
   return NextResponse.redirect(new URL("/login", `${proto}://${host}`));
 }
 
