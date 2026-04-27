@@ -10,10 +10,13 @@ export async function middleware(req: NextRequest) {
   } catch {
     // fall through to redirect on any session decode failure
   }
-  const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = "";
-  return NextResponse.redirect(url);
+  // Relative Location so the browser resolves against the original public URL
+  // (the upstream Apache proxy doesn't preserve Host, so req.nextUrl points at
+  // 127.0.0.1:3000 and an absolute redirect would leak the internal host).
+  return new NextResponse(null, {
+    status: 307,
+    headers: { Location: "/login" },
+  });
 }
 
 export const config = {
