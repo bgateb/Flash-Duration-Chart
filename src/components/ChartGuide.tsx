@@ -37,10 +37,10 @@ const SECTIONS: Section[] = [
     body: (
       <>
         Many modern flashes offer special high-speed modes — variously called Freeze, Speed,
-        Action, or HSS — that use a different discharge circuit to produce a much shorter
-        burst. These modes typically sacrifice color accuracy, maximum power output, or
+        or Action — that use a different discharge circuit to produce a much shorter
+        burst. These modes typically sacrifice color accuracy, maximum power output, or even
         effective guide number. On this chart, each mode is shown as a separate line with a
-        distinct dash pattern so you can compare the same flash across modes.
+        distinct dash pattern so you can compare the same flash across modes where available.
       </>
     ),
   },
