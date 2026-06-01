@@ -319,6 +319,21 @@ export function FlashChart({
     bg.setAttribute("fill", `hsl(${docStyle.getPropertyValue("--background").trim()})`);
     clone.insertBefore(bg, clone.firstChild);
 
+    // Watermark: source attribution in the bottom-right corner. We size and
+    // position it off the rendered SVG's pixel dimensions so it sits just
+    // inside the bottom edge regardless of the chart's current size.
+    const rect = svg.getBoundingClientRect();
+    const watermark = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    watermark.setAttribute("x", String(rect.width - 8));
+    watermark.setAttribute("y", String(rect.height - 8));
+    watermark.setAttribute("text-anchor", "end");
+    watermark.setAttribute("font-family", "system-ui, -apple-system, sans-serif");
+    watermark.setAttribute("font-size", "11");
+    watermark.setAttribute("fill", `hsl(${docStyle.getPropertyValue("--muted-foreground").trim()})`);
+    watermark.setAttribute("opacity", "0.7");
+    watermark.textContent = "data sourced from bgateb.com";
+    clone.appendChild(watermark);
+
     const xml = new XMLSerializer().serializeToString(clone);
     const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
